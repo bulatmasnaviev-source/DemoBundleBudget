@@ -82,10 +82,15 @@ final class DemoController extends AbstractController
         }
 
         $activeProjectStatuses = [];
-        $today = new \DateTimeImmutable('today');
         foreach ($projects as $project) {
-            $projectEnd = method_exists($project, 'getEnd') ? $project->getEnd() : null;
-            if ($projectEnd instanceof \DateTimeInterface && $projectEnd < $today) {
+            $isVisible = true;
+            if (method_exists($project, 'isVisible')) {
+                $isVisible = (bool) $project->isVisible();
+            } elseif (method_exists($project, 'getVisible')) {
+                $isVisible = (bool) $project->getVisible();
+            }
+
+            if (!$isVisible) {
                 continue;
             }
 
