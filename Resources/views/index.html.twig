@@ -1,201 +1,458 @@
 {% extends 'base.html.twig' %}
-{% import "macros/widgets.html.twig" as widgets %}
 
 {% block main %}
-
-    {{ widgets.callout('warning', 'demo.visited_page'|trans({'%counter%': entity.counter})) }}
-
-    {{ widgets.callout('success', 'Your configuration key "some_setting" has the value: ' ~ configuration.someSetting) }}
-
-    {% embed '@theme/embeds/card.html.twig' with {collapsed: false} %}
-        {% block box_title %}Locale data format{% endblock %}
-        {% block box_body_class %}p-0{% endblock %}
-        {% block box_body %}
-            <p class="p-2">
-                <label for="doctor_locale_switch">You can change the language to any of the supported ones and see the data rendered in this locale:</label>
-                {% set demoLocale = app.request.locale == 'en' ? 'de' : 'en' %}
-                <select id="doctor_locale_switch" onchange="document.location = '{{ path('demo', {'_locale': demoLocale}) }}'.replace('{{ demoLocale }}', this.value)">
-                    {% for locale in locales %}
-                        <option value="{{ locale }}"{% if locale == app.request.locale %} selected{% endif %}>{{ locale|locale_name(locale) }} [{{ locale }}]</option>
-                    {% endfor %}
-                </select>
-            </p>
-            <table class="table table-hover">
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ now|date }}{% endverbatim %}</th>
-                    <td class="text-break">{{ now|date }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ now|date_time }}{% endverbatim %}</th>
-                    <td class="text-break">{{ now|date_time }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ now|format_datetime }}{% endverbatim %}</th>
-                    <td class="text-break">{{ now|format_datetime }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ now|date_short }}{% endverbatim %}</th>
-                    <td class="text-break">{{ now|date_short }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ now|format_date }}{% endverbatim %}</th>
-                    <td class="text-break">{{ now|format_date }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ now|date_weekday }}{% endverbatim %}</th>
-                    <td class="text-break">{{ now|date_weekday }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ now|day_name }}{% endverbatim %}</th>
-                    <td class="text-break">{{ now|day_name }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ now|time }}{% endverbatim %}</th>
-                    <td class="text-break">{{ now|time }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ now|format_time }}{% endverbatim %}</th>
-                    <td class="text-break">{{ now|format_time }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ now|month_name }}{% endverbatim %}</th>
-                    <td class="text-break">{{ now|month_name }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ timesheet|duration }}{% endverbatim %}</th>
-                    <td class="text-break">{{ timesheet|duration }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ timesheet|duration(false) }}{% endverbatim %}</th>
-                    <td class="text-break">{{ timesheet|duration(false) }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ timesheet|duration(true) }}{% endverbatim %}</th>
-                    <td class="text-break">{{ timesheet|duration(true) }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ {% endverbatim %}{{ timesheet.duration }}{% verbatim %}|duration }}{% endverbatim %}</th>
-                    <td class="text-break">{{ timesheet.duration|duration }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ {% endverbatim %}{{ timesheet.rate }}{% verbatim %}|amount }}{% endverbatim %}</th>
-                    <td class="text-break">{{ timesheet.rate|amount }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ {% endverbatim %}{{ timesheet.rate }}{% verbatim %}|format_number }}{% endverbatim %}</th>
-                    <td class="text-break">{{ timesheet.rate|format_number }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ timesheet.rate|money }}{% endverbatim %}</th>
-                    <td class="text-break">{{ timesheet.rate|money }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ timesheet.rate|money('EUR', true) }}{% endverbatim %}</th>
-                    <td class="text-break">{{ timesheet.rate|money('EUR', true) }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ timesheet.rate|format_currency('EUR') }}{% endverbatim %}</th>
-                    <td class="text-break">{{ timesheet.rate|format_currency('EUR') }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ timesheet.rate|money('EUR', false) }}{% endverbatim %}</th>
-                    <td class="text-break">{{ timesheet.rate|money('EUR', false) }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ 'EUR'|currency_name }}{% endverbatim %}</th>
-                    <td class="text-break">{{ 'EUR'|currency_name }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ 'EUR'|currency_symbol }}{% endverbatim %}</th>
-                    <td class="text-break">{{ 'EUR'|currency_symbol }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ 'AT'|country_name('de_AT') }}{% endverbatim %}</th>
-                    <td class="text-break">{{ 'AT'|country_name('de_AT') }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ 'AT'|country_name }}{% endverbatim %}</th>
-                    <td class="text-break">{{ 'AT'|country_name }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ 'de_AT'|language_name }}{% endverbatim %}</th>
-                    <td class="text-break">{{ 'de_AT'|language_name }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ 'de_AT'|language_name('de_AT') }}{% endverbatim %}</th>
-                    <td class="text-break">{{ 'de_AT'|language_name('de_AT') }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ 'de_AT'|locale_name }}{% endverbatim %}</th>
-                    <td class="text-break">{{ 'de_AT'|locale_name }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ 'de_AT'|locale_name('de_AT') }}{% endverbatim %}</th>
-                    <td class="text-break">{{ 'de_AT'|locale_name('de_AT') }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ locale_format('date') }}{% endverbatim %}</th>
-                    <td class="text-break">{{ locale_format('date') }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ locale_format('time') }}{% endverbatim %}</th>
-                    <td class="text-break">{{ locale_format('time') }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ locale_format('date-time') }}{% endverbatim %}</th>
-                    <td class="text-break">{{ locale_format('date-time') }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ month_names() }}{% endverbatim %}</th>
-                    <td class="text-break">{{ month_names()|join(', ') }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ tabler_bundle.rightToLeft }}{% endverbatim %}</th>
-                    <td class="text-break">{{ tabler_bundle.rightToLeft ? 'true' : 'false' }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ iso_day_by_name(app.user.firstDayOfWeek) }}{% endverbatim %}</th>
-                    <td class="text-break">{{ iso_day_by_name(app.user.firstDayOfWeek) }}</td>
-                </tr>
-                <tr>
-                    <th class="text-nowrap w-min">{% verbatim %}{{ javascript_configurations(app.user) }}{% endverbatim %}</th>
-                    <td class="text-break">
-                        {% for name, value in javascript_configurations(app.user) %}
-                            <strong>{{ name }}</strong>
-                            <code>
-                                {% if value is same as (true) %}
-                                    true
-                                {% elseif value is same as (false) %}
-                                    false
-                                {% elseif value is iterable %}
-                                    <ul>
-                                    {% for k, v in value %}
-                                        <li>
-                                            {{ k }}:
-                                            {{ v is iterable ? v|join(', ') : v }}
-                                        </li>
-                                    {% endfor %}
-                                    </ul>
-                                {% else %}
-                                    {{ value }}
-                                {% endif %}
-                            </code>
-                            <br>
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Budget Plan-Actual Analysis</h3>
+        </div>
+        <div class="card-body">
+            <div class="row g-3 mb-3">
+                <div class="col-md-4">
+                    <label class="form-label" for="projectSelect">Проект</label>
+                    <select id="projectSelect" class="form-select">
+                        {% for project in projects %}
+                            <option value="{{ project.id }}">{{ project.name }}</option>
+                        {% else %}
+                            <option value="">Нет доступных проектов</option>
                         {% endfor %}
-                    </td>
-                </tr>
+                    </select>
+                </div>
+            </div>
 
-            </table>
-        {% endblock %}
-    {% endembed %}
+            <div class="row g-2 mb-3">
+                <div class="col-md-2">
+                    <label class="form-label">Дата начала проекта</label>
+                    <div id="projectStartDateLabel" class="form-control-plaintext border rounded px-2 py-2 bg-light">—</div>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Дата окончания проекта</label>
+                    <div id="projectEndDateLabel" class="form-control-plaintext border rounded px-2 py-2 bg-light">—</div>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Бюджет проекта</label>
+                    <div id="projectBudgetLabel" class="form-control-plaintext border rounded px-2 py-2 bg-light">0</div>
+                </div>
+            </div>
 
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <strong>Статус базового плана:</strong>
+                <span id="planStatusLabel" class="fw-bold">Новый</span>
+            </div>
+
+            <div class="d-flex flex-wrap gap-2 mb-3">
+                <button id="sendForApprovalButton" type="button" class="btn btn-secondary">Отправить на согласование</button>
+                <button id="approvePlanButton" type="button" class="btn btn-success" {% if not is_admin %}disabled{% endif %}>Согласовать</button>
+                <button id="rejectPlanButton" type="button" class="btn btn-warning" {% if not is_admin %}disabled{% endif %}>Отклонено</button>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-bordered align-middle" id="budgetTable">
+                    <thead id="budgetTableHead"></thead>
+                    <tbody id="budgetTableBody"></tbody>
+                    <tfoot>
+                    <tr id="summaryRow">
+                        <th colspan="2">Сумма (ставка × часы)</th>
+                    </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            <div class="d-flex flex-column align-items-start gap-2 mt-3">
+                <button id="addRowButton" type="button" class="btn btn-outline-primary">+</button>
+                <button id="buildChartButton" type="button" class="btn btn-success">OK</button>
+            </div>
+
+            <div class="mt-4">
+                <svg id="budgetChart" width="100%" height="320" viewBox="0 0 900 320" role="img" aria-label="График расходования бюджета"></svg>
+            </div>
+        </div>
+    </div>
 {% endblock %}
 
 {% block javascripts %}
     {{ parent() }}
-    <script type="text/javascript">
-        document.addEventListener('kimai.initialized', function() {
-            KimaiReloadPageWidget.create('kimai.systemConfigUpdate', true);
-        });
+    <script>
+        (function () {
+            const projects = {{ project_data|json_encode|raw }};
+            const employees = {{ employees|json_encode|raw }};
+            const isAdmin = {{ is_admin ? 'true' : 'false' }};
+            const planGetUrlTemplate = '{{ path('demo_budget_plan_get', {'project': 'PROJECT_ID'}) }}';
+            const planStatusUrlTemplate = '{{ path('demo_budget_plan_status', {'project': 'PROJECT_ID'}) }}';
+
+            const STATUS = {
+                NEW: {label: 'Новый', color: '#000000', locked: false},
+                SENT: {label: 'Отправлено', color: '#6c757d', locked: true},
+                APPROVED: {label: 'Согласовано', color: '#198754', locked: true},
+                REJECTED: {label: 'Отклонено', color: '#ffc107', locked: false}
+            };
+
+            const employeeMap = new Map(employees.map((employee) => [String(employee.id), employee]));
+            const state = {
+                weeks: [],
+                rowCount: 0,
+                activeProject: null,
+                activeBudget: 0,
+                status: 'NEW',
+            };
+
+            const projectSelect = document.getElementById('projectSelect');
+            const projectStartDateLabel = document.getElementById('projectStartDateLabel');
+            const projectEndDateLabel = document.getElementById('projectEndDateLabel');
+            const projectBudgetLabel = document.getElementById('projectBudgetLabel');
+            const planStatusLabel = document.getElementById('planStatusLabel');
+            const tableHead = document.getElementById('budgetTableHead');
+            const tableBody = document.getElementById('budgetTableBody');
+            const summaryRow = document.getElementById('summaryRow');
+            const chartSvg = document.getElementById('budgetChart');
+            const addRowButton = document.getElementById('addRowButton');
+
+            function getPlanUrl(template, projectId) {
+                return template.replace('PROJECT_ID', String(projectId));
+            }
+
+            function getMonday(date) {
+                const result = new Date(date);
+                const day = result.getDay();
+                const diff = day === 0 ? -6 : 1 - day;
+                result.setDate(result.getDate() + diff);
+                result.setHours(0, 0, 0, 0);
+                return result;
+            }
+
+            function getSunday(date) {
+                const monday = getMonday(date);
+                const sunday = new Date(monday);
+                sunday.setDate(monday.getDate() + 6);
+                sunday.setHours(23, 59, 59, 999);
+                return sunday;
+            }
+
+            function getIsoWeek(date) {
+                const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+                const dayNr = (target.getUTCDay() + 6) % 7;
+                target.setUTCDate(target.getUTCDate() - dayNr + 3);
+                const firstThursday = new Date(Date.UTC(target.getUTCFullYear(), 0, 4));
+                const firstDayNr = (firstThursday.getUTCDay() + 6) % 7;
+                firstThursday.setUTCDate(firstThursday.getUTCDate() - firstDayNr + 3);
+                return 1 + Math.round((target - firstThursday) / 604800000);
+            }
+
+            function getWeekLabel(weekStart) {
+                const week = getIsoWeek(weekStart);
+                const yearShort = String(weekStart.getFullYear()).slice(-2);
+                return `W${week}-${yearShort}`;
+            }
+
+            function buildWeeks() {
+                if (!state.activeProject || !state.activeProject.start || !state.activeProject.end) {
+                    return [];
+                }
+
+                const startDate = new Date(state.activeProject.start);
+                const endDate = new Date(state.activeProject.end);
+
+                if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || startDate > endDate) {
+                    return [];
+                }
+
+                const periodStart = getMonday(startDate);
+                periodStart.setDate(periodStart.getDate() - 7);
+
+                const periodEnd = getSunday(endDate);
+                periodEnd.setDate(periodEnd.getDate() + 14);
+
+                const weeks = [];
+                const cursor = new Date(periodStart);
+                while (cursor <= periodEnd) {
+                    const weekStart = new Date(cursor);
+                    weeks.push({label: getWeekLabel(weekStart)});
+                    cursor.setDate(cursor.getDate() + 7);
+                }
+
+                return weeks;
+            }
+
+            function setStatus(status) {
+                state.status = STATUS[status] ? status : 'NEW';
+                planStatusLabel.textContent = STATUS[state.status].label;
+                planStatusLabel.style.color = STATUS[state.status].color;
+
+                const locked = STATUS[state.status].locked;
+                addRowButton.disabled = locked;
+                tableBody.querySelectorAll('.hour-input, .employee-select').forEach((input) => {
+                    input.disabled = locked;
+                });
+            }
+
+            function createEmployeeOptions() {
+                if (employees.length === 0) {
+                    return '<option value="">Нет сотрудников</option>';
+                }
+
+                return employees
+                    .map((employee) => `<option value="${employee.id}">${employee.name}</option>`)
+                    .join('');
+            }
+
+            function updateRowRate(row) {
+                const select = row.querySelector('.employee-select');
+                const rateLabel = row.querySelector('.rate-label');
+                const employee = employeeMap.get(String(select.value));
+                const rate = employee ? Number(employee.hourlyRate || 0) : 0;
+                rateLabel.textContent = rate.toFixed(2);
+                row.dataset.rate = String(rate);
+            }
+
+            function createRow(initialEmployeeId = null, hourValues = []) {
+                const tr = document.createElement('tr');
+                tr.dataset.rate = '0';
+
+                const employeeCell = document.createElement('td');
+                employeeCell.innerHTML = `<select class="form-select employee-select">${createEmployeeOptions()}</select>`;
+                const rateCell = document.createElement('td');
+                rateCell.innerHTML = '<span class="rate-label">0.00</span>';
+
+                tr.appendChild(employeeCell);
+                tr.appendChild(rateCell);
+
+                for (let weekIndex = 0; weekIndex < state.weeks.length; weekIndex++) {
+                    const hourCell = document.createElement('td');
+                    const value = hourValues[weekIndex] ?? '0';
+                    hourCell.innerHTML = `<input type="number" min="0" step="0.1" class="form-control hour-input" style="min-width: 9rem;" value="${value}">`;
+                    tr.appendChild(hourCell);
+                }
+
+                tableBody.appendChild(tr);
+
+                const select = tr.querySelector('.employee-select');
+                if (initialEmployeeId !== null) {
+                    select.value = String(initialEmployeeId);
+                }
+                if (!select.value && employees.length > 0) {
+                    select.value = String(employees[0].id);
+                }
+
+                updateRowRate(tr);
+            }
+
+            function getCurrentRowsPayload() {
+                return Array.from(tableBody.querySelectorAll('tr')).map((row) => ({
+                    employeeId: row.querySelector('.employee-select')?.value ?? null,
+                    hours: Array.from(row.querySelectorAll('.hour-input')).map((input) => input.value),
+                }));
+            }
+
+            function renderTableStructure(rowsFromStorage = null) {
+                state.weeks = buildWeeks();
+                tableHead.innerHTML = '';
+                summaryRow.querySelectorAll('td').forEach((cell) => cell.remove());
+
+                const headRow = document.createElement('tr');
+                headRow.innerHTML = '<th>ФИО сотрудника</th><th>Часовая ставка</th>';
+
+                state.weeks.forEach((week) => {
+                    const th = document.createElement('th');
+                    th.textContent = week.label;
+                    headRow.appendChild(th);
+
+                    const summaryCell = document.createElement('td');
+                    summaryCell.className = 'summary-cell';
+                    summaryCell.textContent = '0.00';
+                    summaryRow.appendChild(summaryCell);
+                });
+
+                tableHead.appendChild(headRow);
+                tableBody.innerHTML = '';
+
+                const rows = Array.isArray(rowsFromStorage) ? rowsFromStorage : [];
+                if (rows.length === 0) {
+                    for (let i = 0; i < 3; i++) {
+                        const fallback = employees[i] ? employees[i].id : null;
+                        createRow(fallback);
+                    }
+                } else {
+                    rows.forEach((row) => createRow(row.employeeId ?? null, Array.isArray(row.hours) ? row.hours : []));
+                }
+
+                setStatus(state.status);
+                calculateSummary();
+            }
+
+            function calculateSummary() {
+                const totals = new Array(state.weeks.length).fill(0);
+                tableBody.querySelectorAll('tr').forEach((row) => {
+                    const rate = parseFloat(row.dataset.rate || '0') || 0;
+                    row.querySelectorAll('.hour-input').forEach((input, weekIndex) => {
+                        const hours = parseFloat(input.value || '0') || 0;
+                        totals[weekIndex] += rate * hours;
+                    });
+                });
+
+                summaryRow.querySelectorAll('.summary-cell').forEach((cell, index) => {
+                    cell.textContent = totals[index].toFixed(2);
+                });
+
+                return totals;
+            }
+
+            function renderChart() {
+                const budget = state.activeBudget || 0;
+                const totals = calculateSummary();
+                const values = [];
+
+                if (state.weeks.length === 0) {
+                    chartSvg.innerHTML = '<text x="20" y="40">У выбранного проекта нет корректных дат.</text>';
+                    return;
+                }
+
+                for (let i = 0; i < state.weeks.length; i++) {
+                    values.push(i === 0 ? budget : values[i - 1] - totals[i - 1]);
+                }
+
+                const padding = {left: 60, right: 20, top: 20, bottom: 50};
+                const width = 900;
+                const height = 320;
+                const innerWidth = width - padding.left - padding.right;
+                const innerHeight = height - padding.top - padding.bottom;
+                const minValue = Math.min(...values, 0);
+                const maxValue = Math.max(...values, budget, 1);
+                const range = maxValue - minValue || 1;
+
+                const points = values.map((value, index) => {
+                    const x = padding.left + (index * innerWidth) / Math.max(values.length - 1, 1);
+                    const y = padding.top + ((maxValue - value) / range) * innerHeight;
+                    return {x, y, value};
+                });
+
+                chartSvg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+                chartSvg.innerHTML = `
+                    <line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${height - padding.bottom}" stroke="#333" />
+                    <line x1="${padding.left}" y1="${height - padding.bottom}" x2="${width - padding.right}" y2="${height - padding.bottom}" stroke="#333" />
+                    <polyline fill="none" stroke="#206bc4" stroke-width="2" points="${points.map((point) => `${point.x},${point.y}`).join(' ')}" />
+                    ${points.map((point) => `<circle cx="${point.x}" cy="${point.y}" r="3" fill="#206bc4" />`).join('')}
+                    ${points.map((point, index) => `<text x="${point.x}" y="${height - padding.bottom + 20}" text-anchor="middle" font-size="11">${state.weeks[index].label}</text>`).join('')}
+                    ${points.map((point) => `<text x="${point.x}" y="${point.y - 8}" text-anchor="middle" font-size="10">${point.value.toFixed(0)}</text>`).join('')}
+                `;
+            }
+
+            async function loadSavedPlan(projectId) {
+                const response = await fetch(getPlanUrl(planGetUrlTemplate, projectId));
+                if (!response.ok) {
+                    return {status: 'NEW', rows: []};
+                }
+
+                const payload = await response.json();
+                return {
+                    status: STATUS[payload.status] ? payload.status : 'NEW',
+                    rows: Array.isArray(payload.rows) ? payload.rows : []
+                };
+            }
+
+            async function savePlan(status) {
+                const payload = {
+                    status,
+                    rows: getCurrentRowsPayload(),
+                };
+
+                const response = await fetch(getPlanUrl(planStatusUrlTemplate, state.activeProject.id), {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    alert('Не удалось обновить статус плана');
+                    return;
+                }
+
+                const data = await response.json();
+                setStatus(data.status || status);
+            }
+
+            async function applyProject(projectId) {
+                state.activeProject = projects.find((project) => String(project.id) === String(projectId)) || null;
+                const start = state.activeProject?.start ?? '—';
+                const end = state.activeProject?.end ?? '—';
+                const budget = Number(state.activeProject?.budget ?? 0);
+                state.activeBudget = budget;
+
+                projectStartDateLabel.textContent = start;
+                projectEndDateLabel.textContent = end;
+                projectBudgetLabel.textContent = budget.toFixed(2);
+
+                if (!state.activeProject) {
+                    state.status = 'NEW';
+                    renderTableStructure([]);
+                    renderChart();
+                    return;
+                }
+
+                const saved = await loadSavedPlan(state.activeProject.id);
+                state.status = saved.status;
+                renderTableStructure(saved.rows);
+                renderChart();
+            }
+
+            document.getElementById('addRowButton').addEventListener('click', function () {
+                createRow();
+                setStatus(state.status);
+                calculateSummary();
+            });
+
+            document.getElementById('buildChartButton').addEventListener('click', function () {
+                renderChart();
+            });
+
+            document.getElementById('sendForApprovalButton').addEventListener('click', function () {
+                if (!state.activeProject) {
+                    return;
+                }
+
+                savePlan('SENT');
+            });
+
+            document.getElementById('approvePlanButton').addEventListener('click', function () {
+                if (!isAdmin || !state.activeProject) {
+                    return;
+                }
+
+                savePlan('APPROVED');
+            });
+
+            document.getElementById('rejectPlanButton').addEventListener('click', function () {
+                if (!isAdmin || !state.activeProject) {
+                    return;
+                }
+
+                savePlan('REJECTED');
+            });
+
+            projectSelect.addEventListener('change', function () {
+                applyProject(this.value);
+            });
+
+            tableBody.addEventListener('change', function (event) {
+                if (event.target.classList.contains('employee-select')) {
+                    updateRowRate(event.target.closest('tr'));
+                    calculateSummary();
+                }
+            });
+
+            tableBody.addEventListener('input', function (event) {
+                if (event.target.classList.contains('hour-input')) {
+                    calculateSummary();
+                }
+            });
+
+            if (projectSelect.value) {
+                applyProject(projectSelect.value);
+            } else if (projects.length > 0) {
+                projectSelect.value = String(projects[0].id);
+                applyProject(projectSelect.value);
+            } else {
+                renderTableStructure([]);
+                renderChart();
+            }
+        })();
     </script>
 {% endblock %}
