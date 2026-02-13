@@ -81,6 +81,22 @@ final class DemoController extends AbstractController
             ];
         }
 
+        $activeProjectStatuses = [];
+        $today = new \DateTimeImmutable('today');
+        foreach ($projects as $project) {
+            $projectEnd = method_exists($project, 'getEnd') ? $project->getEnd() : null;
+            if ($projectEnd instanceof \DateTimeInterface && $projectEnd < $today) {
+                continue;
+            }
+
+            $statusData = $this->budgetPlanStorage->loadByProjectId((int) $project->getId());
+            $activeProjectStatuses[] = [
+                'id' => $project->getId(),
+                'name' => $project->getName(),
+                'status' => $this->normalizePlanStatus(\is_array($statusData) ? (string) ($statusData['status'] ?? 'NEW') : 'NEW'),
+            ];
+        }
+
         $users = $this->entityManager->getRepository(User::class)->findBy([], ['alias' => 'ASC']);
         $employees = [];
         foreach ($users as $user) {
@@ -115,6 +131,7 @@ final class DemoController extends AbstractController
             'projects' => $projects,
             'project_data' => $projectData,
             'employees' => $employees,
+            'active_project_statuses' => $activeProjectStatuses,
             'is_admin' => $this->isGranted('ROLE_ADMIN'),
             // for locale testing
             'now' => new \DateTime(),
@@ -165,6 +182,86 @@ final class DemoController extends AbstractController
             'SENT', 'APPROVED', 'REJECTED' => $status,
             default => 'NEW',
         };
+    }
+
+
+    #[Route(path: '/budget-plan/{project}/actual-costs', name: 'demo_budget_plan_actual_costs', methods: ['GET'])]
+    public function getActualCosts(Project $project): JsonResponse
+    {
+        $start = method_exists($project, 'getStart') ? $project->getStart() : null;
+        $end = method_exists($project, 'getEnd') ? $project->getEnd() : null;
+
+        if (!$start instanceof \DateTimeInterface || !$end instanceof \DateTimeInterface || $start > $end) {
+            return new JsonResponse(['weeks' => [], 'matrix' => []]);
+        }
+
+        $periodStart = (new \DateTimeImmutable($start->format('Y-m-d')))->modify('monday this week')->modify('-1 week')->setTime(0, 0, 0);
+        $periodEnd = (new \DateTimeImmutable($end->format('Y-m-d')))->modify('sunday this week')->modify('+2 week')->setTime(23, 59, 59);
+
+        $weeks = [];
+        $cursor = $periodStart;
+        while ($cursor <= $periodEnd) {
+            $weeks[] = $cursor;
+            $cursor = $cursor->modify('+1 week');
+        }
+
+        $indexByWeekStart = [];
+        foreach ($weeks as $idx => $weekStart) {
+            $indexByWeekStart[$weekStart->format('Y-m-d')] = $idx;
+        }
+
+        $matrix = [];
+
+        $timesheets = $this->entityManager->getRepository(Timesheet::class)->createQueryBuilder('t')
+            ->andWhere('t.project = :project')
+            ->andWhere('t.begin >= :begin')
+            ->andWhere('t.begin <= :end')
+            ->setParameter('project', $project)
+            ->setParameter('begin', $periodStart)
+            ->setParameter('end', $periodEnd)
+            ->getQuery()
+            ->getResult();
+
+        foreach ($timesheets as $timesheet) {
+            if (!$timesheet instanceof Timesheet || $timesheet->getBegin() === null || $timesheet->getUser() === null) {
+                continue;
+            }
+
+            $weekStart = (new \DateTimeImmutable($timesheet->getBegin()->format('Y-m-d')))->modify('monday this week')->format('Y-m-d');
+            if (!isset($indexByWeekStart[$weekStart])) {
+                continue;
+            }
+
+            $userId = (string) $timesheet->getUser()->getId();
+            $weekIndex = $indexByWeekStart[$weekStart];
+
+            $entryCost = $timesheet->getRate();
+            if (!\is_numeric($entryCost)) {
+                $duration = max(0, (int) $timesheet->getDuration());
+                $hourly = (float) $timesheet->getHourlyRate();
+                $entryCost = ($duration / 3600) * $hourly;
+            }
+
+            if (!isset($matrix[$userId])) {
+                $matrix[$userId] = [];
+            }
+
+            if (!isset($matrix[$userId][$weekIndex])) {
+                $matrix[$userId][$weekIndex] = 0.0;
+            }
+
+            $matrix[$userId][$weekIndex] += (float) $entryCost;
+        }
+
+        return new JsonResponse([
+            'weeks' => array_map(static function (\DateTimeImmutable $weekStart): array {
+                return [
+                    'start' => $weekStart->format('Y-m-d'),
+                    'label' => 'W' . $weekStart->format('W') . '-' . $weekStart->format('y'),
+                ];
+            }, $weeks),
+            'matrix' => $matrix,
+        ]);
     }
 
     #[Route(path: '{code}', name: 'demo_error', methods: ['GET'])]
