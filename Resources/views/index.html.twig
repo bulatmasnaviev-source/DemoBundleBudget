@@ -72,7 +72,7 @@
             </div>
 
             <div class="table-responsive">
-                <table class="table table-bordered align-middle" id="budgetTable">
+                <table class="table table-bordered align-middle" id="budgetTable" style="table-layout: fixed; width: auto;">
                     <thead id="budgetTableHead"></thead>
                     <tbody id="budgetTableBody"></tbody>
                     <tfoot><tr id="summaryRow"><th colspan="2">Сумма (ставка × часы)</th></tr></tfoot>
@@ -85,7 +85,7 @@
             </div>
 
             <div class="table-responsive mt-3">
-                <table class="table table-bordered align-middle" id="actualTable">
+                <table class="table table-bordered align-middle" id="actualTable" style="table-layout: fixed; width: auto;">
                     <thead id="actualTableHead"></thead>
                     <tbody id="actualTableBody"></tbody>
                     <tfoot><tr id="actualSummaryRow"><th colspan="2">Факт (таймшиты, часы × ставка)</th></tr></tfoot>
@@ -198,6 +198,7 @@
                 tr.appendChild(employeeCell); tr.appendChild(rateCell);
                 for (let i=0;i<state.weeks.length;i++) {
                     const hourCell = document.createElement('td');
+                    hourCell.style.minWidth = '9rem';
                     hourCell.innerHTML = `<input type="number" min="0" step="0.1" class="form-control hour-input" style="min-width: 9rem;" value="${hourValues[i] ?? '0'}">`;
                     tr.appendChild(hourCell);
                 }
@@ -221,10 +222,10 @@
                 const hr = document.createElement('tr'); hr.innerHTML = '<th>ФИО сотрудника</th><th>Часовая ставка</th>';
                 const hr2 = document.createElement('tr'); hr2.innerHTML = '<th>ФИО сотрудника</th><th>Часовая ставка</th>';
                 state.weeks.forEach((week) => {
-                    const th = document.createElement('th'); th.textContent = week.label; hr.appendChild(th);
-                    const s = document.createElement('td'); s.className = 'summary-cell'; s.textContent = '0'; summaryRow.appendChild(s);
-                    const th2 = document.createElement('th'); th2.textContent = week.label; hr2.appendChild(th2);
-                    const s2 = document.createElement('td'); s2.className = 'actual-summary-cell'; s2.textContent = '0'; actualSummaryRow.appendChild(s2);
+                    const th = document.createElement('th'); th.textContent = week.label; th.style.minWidth = '9rem'; hr.appendChild(th);
+                    const s = document.createElement('td'); s.className = 'summary-cell'; s.style.minWidth = '9rem'; s.textContent = '0'; summaryRow.appendChild(s);
+                    const th2 = document.createElement('th'); th2.textContent = week.label; th2.style.minWidth = '9rem'; hr2.appendChild(th2);
+                    const s2 = document.createElement('td'); s2.className = 'actual-summary-cell'; s2.style.minWidth = '9rem'; s2.textContent = '0'; actualSummaryRow.appendChild(s2);
                 });
                 tableHead.appendChild(hr); actualTableHead.appendChild(hr2);
             }
@@ -261,12 +262,21 @@
                     const employee = employeeMap.get(employeeId);
                     const tr = document.createElement('tr');
                     tr.innerHTML = `<td>${employee ? employee.name : ''}</td><td>${employee ? Math.round(Number(employee.hourlyRate||0)) : 0}</td>`;
+                    const plannedInputs = row.querySelectorAll('.hour-input');
                     for (let i=0;i<state.weeks.length;i++) {
                         const v = Number(state.actualMatrix[employeeId]?.[i] || 0);
                         const hours = Math.round(v);
                         const rate = Math.round(Number(employee?.hourlyRate || 0));
                         totals[i] += hours * rate;
-                        const td = document.createElement('td'); td.style.minWidth = '9rem'; td.textContent = String(hours); tr.appendChild(td);
+                        const plannedHours = Math.round(parseFloat(plannedInputs[i]?.value || '0') || 0);
+                        const td = document.createElement('td');
+                        td.style.minWidth = '9rem';
+                        td.textContent = String(hours);
+                        if (hours > plannedHours) {
+                            td.style.color = '#dc3545';
+                            td.style.fontWeight = '700';
+                        }
+                        tr.appendChild(td);
                     }
                     actualTableBody.appendChild(tr);
                 });
