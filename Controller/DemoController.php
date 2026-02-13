@@ -240,12 +240,8 @@ final class DemoController extends AbstractController
             $userId = (string) $timesheet->getUser()->getId();
             $weekIndex = $indexByWeekStart[$weekStart];
 
-            $entryCost = $timesheet->getRate();
-            if (!\is_numeric($entryCost)) {
-                $duration = max(0, (int) $timesheet->getDuration());
-                $hourly = (float) $timesheet->getHourlyRate();
-                $entryCost = ($duration / 3600) * $hourly;
-            }
+            $duration = max(0, (int) $timesheet->getDuration());
+            $entryHours = $duration / 3600;
 
             if (!isset($matrix[$userId])) {
                 $matrix[$userId] = [];
@@ -255,7 +251,7 @@ final class DemoController extends AbstractController
                 $matrix[$userId][$weekIndex] = 0.0;
             }
 
-            $matrix[$userId][$weekIndex] += (float) $entryCost;
+            $matrix[$userId][$weekIndex] += (float) $entryHours;
         }
 
         return new JsonResponse([

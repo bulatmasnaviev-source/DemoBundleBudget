@@ -7,8 +7,8 @@
         </div>
         <div class="card-body">
             <div class="mb-4">
-                <h4 class="h6">Активные проекты и статус базового плана</h4>
-                <div class="table-responsive">
+                <h4 class="fs-4 fw-bold mb-2">Активные проекты и статус базового плана</h4>
+                <div class="table-responsive" style="max-height: 760px; overflow-y: auto;">
                     <table class="table table-sm table-bordered mb-0">
                         <thead>
                             <tr>
@@ -88,12 +88,19 @@
                 <table class="table table-bordered align-middle" id="actualTable">
                     <thead id="actualTableHead"></thead>
                     <tbody id="actualTableBody"></tbody>
-                    <tfoot><tr id="actualSummaryRow"><th colspan="2">Факт (таймшиты)</th></tr></tfoot>
+                    <tfoot><tr id="actualSummaryRow"><th colspan="2">Факт (таймшиты, часы × ставка)</th></tr></tfoot>
                 </table>
             </div>
 
             <div class="mt-4">
-                <svg id="budgetChart" width="100%" height="320" viewBox="0 0 900 320" role="img" aria-label="График расходования бюджета"></svg>
+                <h4 class="h5 mb-2">Сравнение базового плана и фактического расхода бюджета</h4>
+                <div class="small mb-2">
+                    <span style="color:#206bc4;">● Синяя линия — базовый план</span>
+                    <span class="ms-3" style="color:#000000;">● Черная линия — фактический расход</span>
+                </div>
+                <div class="border rounded p-2" style="max-width: 1000px;">
+                    <svg id="budgetChart" width="100%" height="360" viewBox="0 0 1000 360" preserveAspectRatio="xMinYMin meet" role="img" aria-label="График расходования бюджета"></svg>
+                </div>
             </div>
         </div>
     </div>
@@ -180,18 +187,18 @@
                 const rateLabel = row.querySelector('.rate-label');
                 const employee = employeeMap.get(String(select.value));
                 const rate = employee ? Number(employee.hourlyRate || 0) : 0;
-                rateLabel.textContent = rate.toFixed(2);
+                rateLabel.textContent = String(Math.round(rate));
                 row.dataset.rate = String(rate);
             }
 
             function createRow(initialEmployeeId = null, hourValues = []) {
                 const tr = document.createElement('tr'); tr.dataset.rate = '0';
                 const employeeCell = document.createElement('td'); employeeCell.innerHTML = `<select class="form-select employee-select">${createEmployeeOptions()}</select>`;
-                const rateCell = document.createElement('td'); rateCell.innerHTML = '<span class="rate-label">0.00</span>';
+                const rateCell = document.createElement('td'); rateCell.innerHTML = '<span class="rate-label">0</span>';
                 tr.appendChild(employeeCell); tr.appendChild(rateCell);
                 for (let i=0;i<state.weeks.length;i++) {
                     const hourCell = document.createElement('td');
-                    hourCell.innerHTML = `<input type="number" min="0" step="0.1" class="form-control hour-input" style="min-width: 13.5rem;" value="${hourValues[i] ?? '0'}">`;
+                    hourCell.innerHTML = `<input type="number" min="0" step="0.1" class="form-control hour-input" style="min-width: 9rem;" value="${hourValues[i] ?? '0'}">`;
                     tr.appendChild(hourCell);
                 }
                 tableBody.appendChild(tr);
@@ -215,9 +222,9 @@
                 const hr2 = document.createElement('tr'); hr2.innerHTML = '<th>ФИО сотрудника</th><th>Часовая ставка</th>';
                 state.weeks.forEach((week) => {
                     const th = document.createElement('th'); th.textContent = week.label; hr.appendChild(th);
-                    const s = document.createElement('td'); s.className = 'summary-cell'; s.textContent = '0.00'; summaryRow.appendChild(s);
+                    const s = document.createElement('td'); s.className = 'summary-cell'; s.textContent = '0'; summaryRow.appendChild(s);
                     const th2 = document.createElement('th'); th2.textContent = week.label; hr2.appendChild(th2);
-                    const s2 = document.createElement('td'); s2.className = 'actual-summary-cell'; s2.textContent = '0.00'; actualSummaryRow.appendChild(s2);
+                    const s2 = document.createElement('td'); s2.className = 'actual-summary-cell'; s2.textContent = '0'; actualSummaryRow.appendChild(s2);
                 });
                 tableHead.appendChild(hr); actualTableHead.appendChild(hr2);
             }
@@ -242,7 +249,7 @@
                     const rate = parseFloat(row.dataset.rate || '0') || 0;
                     row.querySelectorAll('.hour-input').forEach((input, idx) => { totals[idx] += rate * (parseFloat(input.value||'0')||0); });
                 });
-                summaryRow.querySelectorAll('.summary-cell').forEach((cell, idx) => { cell.textContent = totals[idx].toFixed(2); });
+                summaryRow.querySelectorAll('.summary-cell').forEach((cell, idx) => { cell.textContent = String(Math.round(totals[idx])); });
                 return totals;
             }
 
@@ -253,15 +260,17 @@
                     const employeeId = String(row.querySelector('.employee-select')?.value || '');
                     const employee = employeeMap.get(employeeId);
                     const tr = document.createElement('tr');
-                    tr.innerHTML = `<td>${employee ? employee.name : ''}</td><td>${employee ? Number(employee.hourlyRate||0).toFixed(2) : '0.00'}</td>`;
+                    tr.innerHTML = `<td>${employee ? employee.name : ''}</td><td>${employee ? Math.round(Number(employee.hourlyRate||0)) : 0}</td>`;
                     for (let i=0;i<state.weeks.length;i++) {
                         const v = Number(state.actualMatrix[employeeId]?.[i] || 0);
-                        totals[i] += v;
-                        const td = document.createElement('td'); td.textContent = v.toFixed(2); tr.appendChild(td);
+                        const hours = Math.round(v);
+                        const rate = Math.round(Number(employee?.hourlyRate || 0));
+                        totals[i] += hours * rate;
+                        const td = document.createElement('td'); td.style.minWidth = '9rem'; td.textContent = String(hours); tr.appendChild(td);
                     }
                     actualTableBody.appendChild(tr);
                 });
-                actualSummaryRow.querySelectorAll('.actual-summary-cell').forEach((cell, idx)=> { cell.textContent = totals[idx].toFixed(2); });
+                actualSummaryRow.querySelectorAll('.actual-summary-cell').forEach((cell, idx)=> { cell.textContent = String(Math.round(totals[idx])); });
                 state.actualTotals = totals;
                 return totals;
             }
@@ -380,7 +389,7 @@
                 state.activeProject = projects.find((project) => String(project.id) === String(projectId)) || null;
                 const start = state.activeProject?.start ?? '—'; const end = state.activeProject?.end ?? '—';
                 state.activeBudget = Number(state.activeProject?.budget ?? 0);
-                projectStartDateLabel.textContent = start; projectEndDateLabel.textContent = end; projectBudgetLabel.textContent = state.activeBudget.toFixed(2);
+                projectStartDateLabel.textContent = start; projectEndDateLabel.textContent = end; projectBudgetLabel.textContent = String(Math.round(state.activeBudget));
                 if (!state.activeProject) { state.status='NEW'; state.actualMatrix={}; renderTableStructure([]); renderChart(); return; }
                 const [saved, actual] = await Promise.all([loadSavedPlan(state.activeProject.id), loadActualCosts(state.activeProject.id)]);
                 state.status = saved.status; state.actualMatrix = actual;
