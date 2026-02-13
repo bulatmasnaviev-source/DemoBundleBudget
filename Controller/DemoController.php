@@ -12,7 +12,9 @@ namespace KimaiPlugin\DemoBundle\Controller;
 
 use App\Configuration\LocaleService;
 use App\Controller\AbstractController;
+use App\Entity\Project;
 use App\Entity\Timesheet;
+use Doctrine\ORM\EntityManagerInterface;
 use App\Utils\PageSetup;
 use KimaiPlugin\DemoBundle\Configuration\DemoConfiguration;
 use KimaiPlugin\DemoBundle\Form\DemoType;
@@ -28,7 +30,7 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 #[IsGranted('demo')]
 final class DemoController extends AbstractController
 {
-    public function __construct(private DemoRepository $repository, private DemoConfiguration $configuration)
+    public function __construct(private DemoRepository $repository, private DemoConfiguration $configuration, private EntityManagerInterface $entityManager)
     {
     }
 
@@ -58,10 +60,14 @@ final class DemoController extends AbstractController
         $page->setActionName('demo');
         $page->setActionPayload(['counter' => $entity->getCounter()]);
 
+        $projects = $this->entityManager->getRepository(Project::class)->findAll();
+        usort($projects, static fn (Project $a, Project $b) => strcasecmp($a->getName(), $b->getName()));
+
         return $this->render('@Demo/index.html.twig', [
             'page_setup' => $page,
             'entity' => $entity,
             'configuration' => $this->configuration,
+            'projects' => $projects,
             // for locale testing
             'now' => new \DateTime(),
             'timesheet' => $timesheet,
