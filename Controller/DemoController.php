@@ -12,7 +12,10 @@ namespace KimaiPlugin\DemoBundle\Controller;
 
 use App\Configuration\LocaleService;
 use App\Controller\AbstractController;
+use App\Entity\Project;
 use App\Entity\Timesheet;
+use App\Entity\User;
+use Doctrine\ORM\EntityManagerInterface;
 use App\Utils\PageSetup;
 use KimaiPlugin\DemoBundle\Configuration\DemoConfiguration;
 use KimaiPlugin\DemoBundle\Form\DemoType;
@@ -28,7 +31,7 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 #[IsGranted('demo')]
 final class DemoController extends AbstractController
 {
-    public function __construct(private DemoRepository $repository, private DemoConfiguration $configuration)
+    public function __construct(private DemoRepository $repository, private DemoConfiguration $configuration, private EntityManagerInterface $entityManager)
     {
     }
 
@@ -58,10 +61,58 @@ final class DemoController extends AbstractController
         $page->setActionName('demo');
         $page->setActionPayload(['counter' => $entity->getCounter()]);
 
+        $projects = $this->entityManager->getRepository(Project::class)->findAll();
+        usort($projects, static fn (Project $a, Project $b) => strcasecmp($a->getName(), $b->getName()));
+
+        $projectData = [];
+        foreach ($projects as $project) {
+            $start = method_exists($project, 'getStart') ? $project->getStart() : null;
+            $end = method_exists($project, 'getEnd') ? $project->getEnd() : null;
+            $budget = method_exists($project, 'getBudget') ? $project->getBudget() : null;
+
+            $projectData[] = [
+                'id' => $project->getId(),
+                'name' => $project->getName(),
+                'start' => $start instanceof \DateTimeInterface ? $start->format('Y-m-d') : null,
+                'end' => $end instanceof \DateTimeInterface ? $end->format('Y-m-d') : null,
+                'budget' => is_numeric($budget) ? (float) $budget : 0.0,
+            ];
+        }
+
+        $users = $this->entityManager->getRepository(User::class)->findBy([], ['alias' => 'ASC']);
+        $employees = [];
+        foreach ($users as $user) {
+            $alias = method_exists($user, 'getAlias') ? (string) $user->getAlias() : '';
+            if ($alias === '' && method_exists($user, 'getDisplayName')) {
+                $alias = (string) $user->getDisplayName();
+            }
+            if ($alias === '' && method_exists($user, 'getUsername')) {
+                $alias = (string) $user->getUsername();
+            }
+
+            $hourlyRate = 0.0;
+            if (method_exists($user, 'getPreferenceValue')) {
+                $value = $user->getPreferenceValue('hourly_rate', 0);
+                $hourlyRate = is_numeric($value) ? (float) $value : 0.0;
+            } elseif (method_exists($user, 'getHourlyRate')) {
+                $value = $user->getHourlyRate();
+                $hourlyRate = is_numeric($value) ? (float) $value : 0.0;
+            }
+
+            $employees[] = [
+                'id' => $user->getId(),
+                'name' => $alias !== '' ? $alias : 'User #' . $user->getId(),
+                'hourlyRate' => $hourlyRate,
+            ];
+        }
+
         return $this->render('@Demo/index.html.twig', [
             'page_setup' => $page,
             'entity' => $entity,
             'configuration' => $this->configuration,
+            'projects' => $projects,
+            'project_data' => $projectData,
+            'employees' => $employees,
             // for locale testing
             'now' => new \DateTime(),
             'timesheet' => $timesheet,
