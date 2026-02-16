@@ -182,6 +182,23 @@
                 return employees.map((e) => `<option value="${e.id}">${e.name}</option>`).join('');
             }
 
+            function getEmployeeMeta(employeeId) {
+                const mapped = employeeMap.get(String(employeeId));
+                if (mapped) {
+                    return {
+                        id: String(employeeId),
+                        name: mapped.name,
+                        rate: Math.round(Number(mapped.hourlyRate || 0)),
+                    };
+                }
+
+                return {
+                    id: String(employeeId),
+                    name: `Пользователь_${employeeId}`,
+                    rate: 0,
+                };
+            }
+
             function updateRowRate(row) {
                 const select = row.querySelector('.employee-select');
                 const rateLabel = row.querySelector('.rate-label');
@@ -257,30 +274,48 @@
             function syncActualTable() {
                 actualTableBody.innerHTML = '';
                 const totals = new Array(state.weeks.length).fill(0);
-                tableBody.querySelectorAll('tr').forEach((row) => {
+                const plannedRows = Array.from(tableBody.querySelectorAll('tr')).map((row) => {
                     const employeeId = String(row.querySelector('.employee-select')?.value || '');
-                    const employee = employeeMap.get(employeeId);
+                    const plannedHours = Array.from(row.querySelectorAll('.hour-input')).map((input) => Math.round(parseFloat(input.value || '0') || 0));
+                    return { employeeId, plannedHours };
+                });
+
+                const included = new Set(plannedRows.map((row) => row.employeeId));
+                const extraRows = Object.keys(state.actualMatrix || {})
+                    .filter((employeeId) => !included.has(String(employeeId)))
+                    .map((employeeId) => ({ employeeId: String(employeeId), plannedHours: new Array(state.weeks.length).fill(0) }));
+
+                const rowsForActual = [...plannedRows, ...extraRows];
+
+                rowsForActual.forEach((rowData) => {
+                    const employee = getEmployeeMeta(rowData.employeeId);
                     const tr = document.createElement('tr');
-                    tr.innerHTML = `<td>${employee ? employee.name : ''}</td><td>${employee ? Math.round(Number(employee.hourlyRate||0)) : 0}</td>`;
-                    const plannedInputs = row.querySelectorAll('.hour-input');
-                    for (let i=0;i<state.weeks.length;i++) {
-                        const v = Number(state.actualMatrix[employeeId]?.[i] || 0);
+                    tr.innerHTML = `<td>${employee.name}</td><td>${employee.rate}</td>`;
+
+                    for (let i = 0; i < state.weeks.length; i++) {
+                        const v = Number(state.actualMatrix[rowData.employeeId]?.[i] || 0);
                         const hours = Math.round(v);
-                        const rate = Math.round(Number(employee?.hourlyRate || 0));
-                        totals[i] += hours * rate;
-                        const plannedHours = Math.round(parseFloat(plannedInputs[i]?.value || '0') || 0);
+                        totals[i] += hours * employee.rate;
+
+                        const plannedHours = rowData.plannedHours[i] || 0;
                         const td = document.createElement('td');
                         td.style.minWidth = '9rem';
                         td.textContent = String(hours);
+
                         if (hours > plannedHours) {
                             td.style.color = '#dc3545';
                             td.style.fontWeight = '700';
                         }
+
                         tr.appendChild(td);
                     }
+
                     actualTableBody.appendChild(tr);
                 });
-                actualSummaryRow.querySelectorAll('.actual-summary-cell').forEach((cell, idx)=> { cell.textContent = String(Math.round(totals[idx])); });
+
+                actualSummaryRow.querySelectorAll('.actual-summary-cell').forEach((cell, idx) => {
+                    cell.textContent = String(Math.round(totals[idx]));
+                });
                 state.actualTotals = totals;
                 return totals;
             }
