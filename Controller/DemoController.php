@@ -216,6 +216,7 @@ final class DemoController extends AbstractController
         }
 
         $matrix = [];
+        $approvedWeekMap = $this->getApprovedWeekMap($periodStart, $periodEnd);
 
         $timesheets = $this->entityManager->getRepository(Timesheet::class)->createQueryBuilder('t')
             ->andWhere('t.project = :project')
@@ -238,6 +239,9 @@ final class DemoController extends AbstractController
             }
 
             $userId = (string) $timesheet->getUser()->getId();
+            if (\is_array($approvedWeekMap) && !isset($approvedWeekMap[$userId . '|' . $weekStart])) {
+                continue;
+            }
             $weekIndex = $indexByWeekStart[$weekStart];
 
             $duration = max(0, (int) $timesheet->getDuration());
@@ -263,6 +267,68 @@ final class DemoController extends AbstractController
             }, $weeks),
             'matrix' => $matrix,
         ]);
+    }
+
+
+    /**
+     * Returns a map keyed by "userId|YYYY-mm-dd(Monday)" for approved weeks.
+     * Returns null if ApprovalBundle tables are unavailable to keep integration soft.
+     */
+    private function getApprovedWeekMap(\DateTimeImmutable $periodStart, \DateTimeImmutable $periodEnd): ?array
+    {
+        try {
+            $connection = $this->entityManager->getConnection();
+            $schemaManager = $connection->createSchemaManager();
+            $tables = array_map('strtolower', $schemaManager->listTableNames());
+
+            if (!\in_array('kimai2_ext_approval', $tables, true)
+                || !\in_array('kimai2_ext_approval_history', $tables, true)
+                || !\in_array('kimai2_ext_approval_status', $tables, true)) {
+                return null;
+            }
+
+            $rows = $connection->fetchAllAssociative(
+                'SELECT a.user_id, a.start_date, a.end_date
+                 FROM kimai2_ext_approval a
+                 INNER JOIN (
+                    SELECT h.approval_id, h.status_id
+                    FROM kimai2_ext_approval_history h
+                    INNER JOIN (
+                        SELECT approval_id, MAX(date) AS max_date
+                        FROM kimai2_ext_approval_history
+                        GROUP BY approval_id
+                    ) latest ON latest.approval_id = h.approval_id AND latest.max_date = h.date
+                 ) current_status ON current_status.approval_id = a.id
+                 INNER JOIN kimai2_ext_approval_status s ON s.id = current_status.status_id
+                 WHERE s.name = :approved
+                   AND a.end_date >= :periodStart
+                   AND a.start_date <= :periodEnd',
+                [
+                    'approved' => 'approved',
+                    'periodStart' => $periodStart->format('Y-m-d'),
+                    'periodEnd' => $periodEnd->format('Y-m-d'),
+                ]
+            );
+
+            $map = [];
+            foreach ($rows as $row) {
+                if (!isset($row['user_id'], $row['start_date'], $row['end_date'])) {
+                    continue;
+                }
+
+                $userId = (string) $row['user_id'];
+                $start = (new \DateTimeImmutable((string) $row['start_date']))->modify('monday this week');
+                $end = (new \DateTimeImmutable((string) $row['end_date']))->modify('monday this week');
+
+                for ($cursor = $start; $cursor <= $end; $cursor = $cursor->modify('+1 week')) {
+                    $map[$userId . '|' . $cursor->format('Y-m-d')] = true;
+                }
+            }
+
+            return $map;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     #[Route(path: '{code}', name: 'demo_error', methods: ['GET'])]
