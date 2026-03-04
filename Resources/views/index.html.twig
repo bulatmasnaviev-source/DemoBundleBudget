@@ -75,7 +75,7 @@
                 <table class="table table-bordered align-middle" id="budgetTable" style="table-layout: fixed; width: auto;">
                     <thead id="budgetTableHead"></thead>
                     <tbody id="budgetTableBody"></tbody>
-                    <tfoot><tr id="summaryRow"><th colspan="2">Сумма (ставка × часы)</th></tr></tfoot>
+                    <tfoot><tr id="summaryRow"><th colspan="3">Сумма (ставка × часы)</th></tr></tfoot>
                 </table>
             </div>
 
@@ -170,7 +170,7 @@
                 planStatusLabel.style.color = STATUS[state.status].color;
                 const locked = STATUS[state.status].locked;
                 addRowButton.disabled = locked;
-                tableBody.querySelectorAll('.hour-input, .employee-select').forEach((el) => { el.disabled = locked; });
+                tableBody.querySelectorAll('.hour-input, .employee-select, .remove-row-button').forEach((el) => { el.disabled = locked; });
                 if (state.activeProject) {
                     const row = activeStatusTableBody.querySelector(`tr[data-project-id="${state.activeProject.id}"] td:last-child`);
                     if (row) { row.textContent = STATUS[state.status].label; row.style.color = STATUS[state.status].color; }
@@ -212,7 +212,9 @@
                 const tr = document.createElement('tr'); tr.dataset.rate = '0';
                 const employeeCell = document.createElement('td'); employeeCell.innerHTML = `<select class="form-select employee-select">${createEmployeeOptions()}</select>`;
                 const rateCell = document.createElement('td'); rateCell.innerHTML = '<span class="rate-label">0</span>';
-                tr.appendChild(employeeCell); tr.appendChild(rateCell);
+                const actionsCell = document.createElement('td');
+                actionsCell.innerHTML = '<button type="button" class="btn btn-sm btn-danger remove-row-button" title="Удалить строку">✕</button>';
+                tr.appendChild(employeeCell); tr.appendChild(rateCell); tr.appendChild(actionsCell);
                 for (let i=0;i<state.weeks.length;i++) {
                     const hourCell = document.createElement('td');
                     hourCell.style.minWidth = '9rem';
@@ -236,7 +238,7 @@
             function renderHeaders() {
                 tableHead.innerHTML = ''; summaryRow.querySelectorAll('td').forEach((c) => c.remove());
                 actualTableHead.innerHTML = ''; actualSummaryRow.querySelectorAll('td').forEach((c) => c.remove());
-                const hr = document.createElement('tr'); hr.innerHTML = '<th>ФИО сотрудника</th><th>Часовая ставка</th>';
+                const hr = document.createElement('tr'); hr.innerHTML = '<th>ФИО сотрудника</th><th>Часовая ставка</th><th>Действия</th>';
                 const hr2 = document.createElement('tr'); hr2.innerHTML = '<th>ФИО сотрудника</th><th>Часовая ставка</th>';
                 state.weeks.forEach((week) => {
                     const th = document.createElement('th'); th.textContent = week.label; th.style.minWidth = '9rem'; hr.appendChild(th);
@@ -449,6 +451,15 @@
             projectSelect.addEventListener('change', function () { applyProject(this.value); });
             tableBody.addEventListener('change', function (event) { if (event.target.classList.contains('employee-select')) { updateRowRate(event.target.closest('tr')); calculateSummary(); syncActualTable(); } });
             tableBody.addEventListener('input', function (event) { if (event.target.classList.contains('hour-input')) calculateSummary(); });
+            tableBody.addEventListener('click', function (event) {
+                if (!event.target.classList.contains('remove-row-button')) {
+                    return;
+                }
+
+                event.target.closest('tr')?.remove();
+                calculateSummary();
+                syncActualTable();
+            });
 
             if (projectSelect.value) applyProject(projectSelect.value);
             else if (projects.length > 0) { projectSelect.value = String(projects[0].id); applyProject(projectSelect.value); }
