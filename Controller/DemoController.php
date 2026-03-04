@@ -137,6 +137,7 @@ final class DemoController extends AbstractController
             'project_data' => $projectData,
             'employees' => $employees,
             'active_project_statuses' => $activeProjectStatuses,
+            'resource_intervals' => $this->buildYearBiWeeklyIntervals((int) (new \DateTimeImmutable())->format('Y')),
             'is_admin' => $this->isGranted('ROLE_ADMIN'),
             // for locale testing
             'now' => new \DateTime(),
@@ -197,22 +198,20 @@ final class DemoController extends AbstractController
         $end = method_exists($project, 'getEnd') ? $project->getEnd() : null;
 
         if (!$start instanceof \DateTimeInterface || !$end instanceof \DateTimeInterface || $start > $end) {
-            return new JsonResponse(['weeks' => [], 'matrix' => []]);
+            return new JsonResponse(['periods' => [], 'matrix' => []]);
         }
 
         $periodStart = (new \DateTimeImmutable($start->format('Y-m-d')))->modify('monday this week')->modify('-1 week')->setTime(0, 0, 0);
         $periodEnd = (new \DateTimeImmutable($end->format('Y-m-d')))->modify('sunday this week')->modify('+2 week')->setTime(23, 59, 59);
-
-        $weeks = [];
-        $cursor = $periodStart;
-        while ($cursor <= $periodEnd) {
-            $weeks[] = $cursor;
-            $cursor = $cursor->modify('+1 week');
-        }
+        $periods = $this->buildBiWeeklyPeriods($periodStart, $periodEnd);
 
         $indexByWeekStart = [];
-        foreach ($weeks as $idx => $weekStart) {
-            $indexByWeekStart[$weekStart->format('Y-m-d')] = $idx;
+        foreach ($periods as $idx => $period) {
+            $weekCursor = $period['start'];
+            for ($i = 0; $i < 2; $i++) {
+                $indexByWeekStart[$weekCursor->format('Y-m-d')] = $idx;
+                $weekCursor = $weekCursor->modify('+1 week');
+            }
         }
 
         $matrix = [];
@@ -242,7 +241,7 @@ final class DemoController extends AbstractController
             if (\is_array($approvedWeekMap) && !isset($approvedWeekMap[$userId . '|' . $weekStart])) {
                 continue;
             }
-            $weekIndex = $indexByWeekStart[$weekStart];
+            $periodIndex = $indexByWeekStart[$weekStart];
 
             $duration = max(0, (int) $timesheet->getDuration());
             $entryHours = $duration / 3600;
@@ -251,22 +250,107 @@ final class DemoController extends AbstractController
                 $matrix[$userId] = [];
             }
 
-            if (!isset($matrix[$userId][$weekIndex])) {
-                $matrix[$userId][$weekIndex] = 0.0;
+            if (!isset($matrix[$userId][$periodIndex])) {
+                $matrix[$userId][$periodIndex] = 0.0;
             }
 
-            $matrix[$userId][$weekIndex] += (float) $entryHours;
+            $matrix[$userId][$periodIndex] += (float) $entryHours;
         }
 
         return new JsonResponse([
-            'weeks' => array_map(static function (\DateTimeImmutable $weekStart): array {
+            'periods' => array_map(static function (array $period): array {
                 return [
-                    'start' => $weekStart->format('Y-m-d'),
-                    'label' => 'W' . $weekStart->format('W') . '-' . $weekStart->format('y'),
+                    'start' => $period['start']->format('Y-m-d'),
+                    'end' => $period['end']->format('Y-m-d'),
+                    'label' => $period['start']->format('d.m') . "\n" . $period['end']->format('d.m'),
                 ];
-            }, $weeks),
+            }, $periods),
             'matrix' => $matrix,
         ]);
+    }
+
+    #[Route(path: '/resource-plan/{intervalStart}', name: 'demo_resource_plan_get', methods: ['GET'])]
+    public function getResourcePlan(string $intervalStart): JsonResponse
+    {
+        $key = 'resource_plan_' . $intervalStart;
+        $data = $this->budgetPlanStorage->loadByName($key);
+
+        if ($data === null) {
+            return new JsonResponse(['status' => 'NEW', 'rows' => []]);
+        }
+
+        return new JsonResponse([
+            'status' => in_array(($data['status'] ?? 'NEW'), ['NEW', 'IN_DISCUSSION', 'REJECTED', 'APPROVED'], true) ? $data['status'] : 'NEW',
+            'rows' => is_array($data['rows'] ?? null) ? $data['rows'] : [],
+        ]);
+    }
+
+    #[Route(path: '/resource-plan/{intervalStart}/status', name: 'demo_resource_plan_status', methods: ['POST'])]
+    public function setResourcePlanStatus(Request $request, string $intervalStart): JsonResponse
+    {
+        $payload = json_decode($request->getContent(), true);
+        $status = (string) ($payload['status'] ?? 'NEW');
+        if (!in_array($status, ['NEW', 'IN_DISCUSSION', 'REJECTED', 'APPROVED'], true)) {
+            $status = 'NEW';
+        }
+        $rows = is_array($payload['rows'] ?? null) ? $payload['rows'] : [];
+
+        $this->budgetPlanStorage->saveByName('resource_plan_' . $intervalStart, ['status' => $status, 'rows' => $rows]);
+
+        return new JsonResponse(['status' => $status, 'rows' => $rows]);
+    }
+
+    #[Route(path: '/resource-plan/{project}/{intervalStart}/approved', name: 'demo_resource_plan_project_approved', methods: ['GET'])]
+    public function getApprovedResourcePlan(Project $project, string $intervalStart): JsonResponse
+    {
+        $data = $this->budgetPlanStorage->loadByName('resource_plan_' . $intervalStart);
+        if (!is_array($data) || ($data['status'] ?? 'NEW') !== 'APPROVED') {
+            return new JsonResponse(['approved' => false, 'hoursByEmployee' => []]);
+        }
+
+        $hoursByEmployee = [];
+        foreach ((array) ($data['rows'] ?? []) as $row) {
+            if ((int) ($row['projectId'] ?? 0) !== (int) $project->getId()) {
+                continue;
+            }
+
+            foreach ((array) ($row['hours'] ?? []) as $employeeId => $hours) {
+                $hoursByEmployee[(string) $employeeId] = (float) $hours;
+            }
+            break;
+        }
+
+        return new JsonResponse(['approved' => true, 'hoursByEmployee' => $hoursByEmployee]);
+    }
+
+    private function buildBiWeeklyPeriods(\DateTimeImmutable $start, \DateTimeImmutable $end): array
+    {
+        $periods = [];
+        for ($cursor = $start; $cursor <= $end; $cursor = $cursor->modify('+2 week')) {
+            $periodStart = $cursor;
+            $periodEnd = $cursor->modify('+13 day')->setTime(23, 59, 59);
+            $periods[] = ['start' => $periodStart, 'end' => $periodEnd];
+        }
+
+        return $periods;
+    }
+
+    private function buildYearBiWeeklyIntervals(int $year): array
+    {
+        $start = (new \DateTimeImmutable(sprintf('%d-01-01', $year)))->modify('monday this week');
+        $end = (new \DateTimeImmutable(sprintf('%d-12-31', $year)))->modify('sunday this week');
+        $intervals = [];
+
+        for ($cursor = $start; $cursor <= $end; $cursor = $cursor->modify('+2 week')) {
+            $finish = $cursor->modify('+13 day');
+            $intervals[] = [
+                'start' => $cursor->format('Y-m-d'),
+                'end' => $finish->format('Y-m-d'),
+                'label' => $cursor->format('d.m') . '-' . $finish->format('d.m'),
+            ];
+        }
+
+        return $intervals;
     }
 
 
