@@ -2,7 +2,9 @@
 
 {% block main %}
     <div class="card">
-        <div class="card-header"><h3 class="card-title">Менеджмент затрат</h3></div>
+        <div class="card-header">
+            <h3 class="card-title">Менеджмент затрат</h3>
+        </div>
         <div class="card-body">
             <div class="row g-3 mb-3">
                 <div class="col-md-4">
@@ -14,8 +16,10 @@
                     </select>
                 </div>
             </div>
+
             <div class="d-flex align-items-center gap-2 mb-2">
-                <strong>Статус базового плана:</strong><span id="planStatusLabel" class="fw-bold">Новый</span>
+                <strong>Статус базового плана:</strong>
+                <span id="planStatusLabel" class="fw-bold">Новый</span>
             </div>
             <div class="d-flex flex-wrap gap-2 mb-3">
                 <button id="sendForApprovalButton" class="btn btn-secondary">Отправить на согласование</button>
@@ -30,6 +34,7 @@
                     <tfoot><tr id="summaryRow"><th colspan="3">Сумма (ставка × часы)</th></tr></tfoot>
                 </table>
             </div>
+
             <div class="d-flex gap-2 mb-3">
                 <button id="addRowButton" class="btn btn-outline-primary">+</button>
                 <button id="buildChartButton" class="btn btn-success">OK</button>
@@ -39,10 +44,11 @@
                 <table class="table table-bordered align-middle" id="actualTable">
                     <thead id="actualTableHead"></thead>
                     <tbody id="actualTableBody"></tbody>
-                    <tfoot><tr id="actualSummaryRow"><th colspan="3">Факт</th></tr></tfoot>
+                    <tfoot><tr id="actualSummaryRow"><th colspan="2">Факт</th></tr></tfoot>
                 </table>
             </div>
-            <svg id="budgetChart" width="100%" height="260"></svg>
+
+            <svg id="budgetChart" width="100%" height="320" viewBox="0 0 1000 320"></svg>
         </div>
     </div>
 {% endblock %}
@@ -51,83 +57,384 @@
 {{ parent() }}
 <script>
 (() => {
-const projects = {{ project_data|json_encode|raw }};
-const employees = {{ employees|json_encode|raw }};
-const isAdmin = {{ is_admin ? 'true' : 'false' }};
-const planGetUrlTemplate = '{{ path('demo_budget_plan_get', {'project': 'PROJECT_ID'}) }}';
-const planStatusUrlTemplate = '{{ path('demo_budget_plan_status', {'project': 'PROJECT_ID'}) }}';
-const actualCostsUrlTemplate = '{{ path('demo_budget_plan_actual_costs', {'project': 'PROJECT_ID'}) }}';
-const STATUS={NEW:{label:'Новый',locked:false,color:'#000'},SENT:{label:'Отправлено',locked:true,color:'#6c757d'},APPROVED:{label:'Согласовано',locked:true,color:'#198754'},REJECTED:{label:'Отклонено',locked:false,color:'#ffc107'}};
-const state={periods:[],status:'NEW',activeProject:null,actualMatrix:{},currentIndex:null,resourceApproved:{},actualManual:{}};
-const $=id=>document.getElementById(id);
-const employeeMap=new Map(employees.map(e=>[String(e.id),e]));
+    const projects = {{ project_data|json_encode|raw }};
+    const employees = {{ employees|json_encode|raw }};
+    const isAdmin = {{ is_admin ? 'true' : 'false' }};
+    const planGetUrlTemplate = '{{ path('demo_budget_plan_get', {'project': 'PROJECT_ID'}) }}';
+    const planStatusUrlTemplate = '{{ path('demo_budget_plan_status', {'project': 'PROJECT_ID'}) }}';
+    const actualCostsUrlTemplate = '{{ path('demo_budget_plan_actual_costs', {'project': 'PROJECT_ID'}) }}';
 
-const fmt=(d)=>`${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}`;
-const getMonday=(date)=>{const r=new Date(date);const d=r.getDay();r.setDate(r.getDate()+(d===0?-6:1-d));r.setHours(0,0,0,0);return r};
-const getSunday=(date)=>{const r=getMonday(date);r.setDate(r.getDate()+6);r.setHours(23,59,59,999);return r};
-function buildPeriods(){
- if(!state.activeProject?.start||!state.activeProject?.end) return [];
- const start=new Date(state.activeProject.start), end=new Date(state.activeProject.end);
- const s=getMonday(start); s.setDate(s.getDate()-7);
- const e=getSunday(end); e.setDate(e.getDate()+14);
- const out=[]; const c=new Date(s);
- while(c<=e){const d2=new Date(c);d2.setDate(d2.getDate()+13); out.push({start:c.toISOString().slice(0,10), end:d2.toISOString().slice(0,10), label:`${fmt(c)}\n${fmt(d2)}`}); c.setDate(c.getDate()+14);} return out;
-}
-function employeeOptions(){return employees.map(e=>`<option value="${e.id}">${e.name}</option>`).join('')}
-function setStatus(st){state.status=STATUS[st]?st:'NEW'; $('planStatusLabel').textContent=STATUS[state.status].label; $('planStatusLabel').style.color=STATUS[state.status].color; const lock=STATUS[state.status].locked; $('addRowButton').disabled=lock; document.querySelectorAll('#budgetTable .hour-input,#budgetTable .employee-select,.remove-row').forEach(el=>el.disabled=lock);} 
-function renderHeaders(){
- $('budgetTableHead').innerHTML='';$('actualTableHead').innerHTML='';
- $('summaryRow').querySelectorAll('.summary-cell').forEach(e=>e.remove()); $('actualSummaryRow').querySelectorAll('.actual-summary-cell').forEach(e=>e.remove());
- const br=document.createElement('tr'); br.innerHTML='<th>Сотрудник</th><th>Ставка</th><th></th>';
- const ar=document.createElement('tr'); ar.innerHTML='<th>Сотрудник</th><th>Ставка</th><th></th>';
- state.periods.forEach((p,idx)=>{const h=document.createElement('th'); h.style.whiteSpace='pre-line'; h.textContent=p.label; br.appendChild(h.cloneNode(true)); ar.appendChild(h); const s=document.createElement('td'); s.className='summary-cell'; s.textContent='0'; $('summaryRow').appendChild(s); const s2=document.createElement('td'); s2.className='actual-summary-cell'; s2.textContent='0'; $('actualSummaryRow').appendChild(s2); if(state.currentIndex===idx){ar.lastChild.style.background='#fff3cd'; br.lastChild.style.background='#fff3cd';}});
- $('budgetTableHead').appendChild(br); $('actualTableHead').appendChild(ar);
-}
-function createRow(empId=null,hours=[]){const tr=document.createElement('tr'); tr.innerHTML=`<td><select class="form-select employee-select">${employeeOptions()}</select></td><td><span class="rate-label">0</span></td><td><button class="btn btn-danger remove-row">✕</button></td>`; state.periods.forEach((_,i)=>{const td=document.createElement('td'); td.innerHTML=`<input class="form-control hour-input" type="number" min="0" step="0.1" value="${hours[i]??0}">`; tr.appendChild(td);}); $('budgetTableBody').appendChild(tr); const sel=tr.querySelector('.employee-select'); sel.value=String(empId??employees[0]?.id??''); updateRate(tr);} 
-function updateRate(tr){const e=employeeMap.get(String(tr.querySelector('.employee-select').value)); tr.dataset.rate=String(Number(e?.hourlyRate||0)); tr.querySelector('.rate-label').textContent=String(Math.round(Number(e?.hourlyRate||0)));}
-function payloadRows(){return [...$('budgetTableBody').querySelectorAll('tr')].map(r=>({employeeId:r.querySelector('.employee-select').value,hours:[...r.querySelectorAll('.hour-input')].map(i=>i.value)}));}
-function totals(){const t=new Array(state.periods.length).fill(0); [...$('budgetTableBody').querySelectorAll('tr')].forEach(r=>{const rate=Number(r.dataset.rate||0); [...r.querySelectorAll('.hour-input')].forEach((i,idx)=>t[idx]+=rate*Number(i.value||0));}); $('summaryRow').querySelectorAll('.summary-cell').forEach((c,i)=>c.textContent=Math.round(t[i]||0)); return t;}
-function syncActual(){
- $('actualTableBody').innerHTML=''; const t=new Array(state.periods.length).fill(0);
- [...$('budgetTableBody').querySelectorAll('tr')].forEach(r=>{
-   const empId=String(r.querySelector('.employee-select').value); const emp=employeeMap.get(empId)||{name:`Пользователь_${empId}`,hourlyRate:0}; const tr=document.createElement('tr');
-   tr.innerHTML=`<td>${emp.name}</td><td>${Math.round(Number(emp.hourlyRate||0))}</td><td><button class="btn btn-danger actual-remove-row">✕</button></td>`;
-   state.periods.forEach((_,idx)=>{const td=document.createElement('td'); const current=state.currentIndex!==null&&idx===state.currentIndex; const future=state.currentIndex!==null&&idx>state.currentIndex; if(current||future){
-      const fromPlan=Number(r.querySelectorAll('.hour-input')[idx]?.value||0);
-      const approved=Number(state.resourceApproved?.[empId]||0);
-      const value=current&&approved>0?approved:(state.actualManual[`${empId}_${idx}`]??fromPlan);
-      const input=document.createElement('input'); input.type='number'; input.step='0.1'; input.min='0'; input.className='form-control actual-input'; input.dataset.emp=empId; input.dataset.idx=idx; input.value=value;
-      if(current){td.style.background='#fff3cd'; if(approved>0){input.disabled=true;}}
-      td.appendChild(input); t[idx]+=Number(value)*Number(emp.hourlyRate||0);
-   } else {
-      const v=Number(state.actualMatrix?.[empId]?.[idx]||0); td.textContent=Math.round(v); t[idx]+=v*Number(emp.hourlyRate||0);
-   }
-   tr.appendChild(td);
-   });
-   $('actualTableBody').appendChild(tr);
- });
- $('actualSummaryRow').querySelectorAll('.actual-summary-cell').forEach((c,i)=>c.textContent=Math.round(t[i]||0));
- drawChart(totals(),t);
-}
-function drawChart(plan,actual){const svg=$('budgetChart'); if(plan.length===0){svg.innerHTML='';return;} const w=1000,h=260,p={l:70,r:20,t:20,b:40},max=Math.max(...plan,...actual,1),step=(w-p.l-p.r)/Math.max(plan.length,1); const to=(vals,color)=>vals.map((v,i)=>`${p.l+i*step},${h-p.b-(v/max)*(h-p.t-p.b)}`).join(' '); svg.setAttribute('viewBox',`0 0 ${w} ${h}`); svg.innerHTML=`<polyline fill="none" stroke="#206bc4" stroke-width="2" points="${to(plan)}"/><polyline fill="none" stroke="#000" stroke-width="2" points="${to(actual)}"/>`;}
+    const STATUS = {
+        NEW: {label: 'Новый', color: '#000000', locked: false},
+        SENT: {label: 'Отправлено', color: '#6c757d', locked: true},
+        APPROVED: {label: 'Согласовано', color: '#198754', locked: true},
+        REJECTED: {label: 'Отклонено', color: '#ffc107', locked: false},
+    };
 
-async function loadSavedPlan(pid){const r=await fetch(planGetUrlTemplate.replace('PROJECT_ID',pid)); if(!r.ok) return {status:'NEW',rows:[]}; return r.json();}
-async function loadActual(pid){const r=await fetch(actualCostsUrlTemplate.replace('PROJECT_ID',pid)); if(!r.ok) return {matrix:{}}; return r.json();}
-async function savePlan(status){const r=await fetch(planStatusUrlTemplate.replace('PROJECT_ID',state.activeProject.id),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status,rows:payloadRows()})}); if(r.ok){const p=await r.json(); setStatus(p.status);}}
-async function applyProject(pid){state.activeProject=projects.find(p=>String(p.id)===String(pid))||null; if(!state.activeProject) return; const [saved,actual]=await Promise.all([loadSavedPlan(pid),loadActual(pid)]); state.periods=buildPeriods(); state.actualMatrix=actual.matrix||{}; state.currentIndex=Number.isInteger(actual.currentIndex)?actual.currentIndex:null; state.resourceApproved=actual.resourceApproved||{}; renderHeaders(); $('budgetTableBody').innerHTML=''; (saved.rows?.length?saved.rows:[{}, {}, {}]).forEach((r)=>createRow(r.employeeId??null,Array.isArray(r.hours)?r.hours:[])); setStatus(saved.status||'NEW'); totals(); syncActual();}
+    const state = {
+        activeProject: null,
+        periods: [],
+        status: 'NEW',
+        actualMatrix: {},
+        currentIndex: null,
+        resourceApproved: {},
+        actualManual: {},
+    };
 
-$('projectSelect').addEventListener('change',e=>applyProject(e.target.value));
-$('addRowButton').addEventListener('click',()=>{createRow(); setStatus(state.status); totals(); syncActual();});
-$('buildChartButton').addEventListener('click',()=>syncActual());
-$('sendForApprovalButton').addEventListener('click',()=>state.activeProject&&savePlan('SENT'));
-$('approvePlanButton').addEventListener('click',()=>isAdmin&&state.activeProject&&savePlan('APPROVED'));
-$('rejectPlanButton').addEventListener('click',()=>isAdmin&&state.activeProject&&savePlan('REJECTED'));
-$('budgetTableBody').addEventListener('change',e=>{if(e.target.classList.contains('employee-select')){updateRate(e.target.closest('tr')); totals(); syncActual();}});
-$('budgetTableBody').addEventListener('input',e=>{if(e.target.classList.contains('hour-input')){totals(); syncActual();}});
-$('budgetTableBody').addEventListener('click',e=>{if(e.target.classList.contains('remove-row')){e.target.closest('tr').remove(); totals(); syncActual();}});
-$('actualTableBody').addEventListener('input',e=>{if(e.target.classList.contains('actual-input')){state.actualManual[`${e.target.dataset.emp}_${e.target.dataset.idx}`]=Number(e.target.value||0); syncActual();}});
-$('actualTableBody').addEventListener('click',e=>{if(e.target.classList.contains('actual-remove-row')){const row=e.target.closest('tr');const name=row.firstChild.textContent.trim(); const budgetRow=[...$('budgetTableBody').querySelectorAll('tr')].find(r=>{const id=r.querySelector('.employee-select').value; return (employeeMap.get(String(id))?.name||`Пользователь_${id}`)===name}); if(budgetRow){budgetRow.remove(); totals(); syncActual();}}});
-if($('projectSelect').value){applyProject($('projectSelect').value);} 
+    const employeeMap = new Map(employees.map((employee) => [String(employee.id), employee]));
+
+    const projectSelect = document.getElementById('projectSelect');
+    const planStatusLabel = document.getElementById('planStatusLabel');
+    const budgetTableHead = document.getElementById('budgetTableHead');
+    const budgetTableBody = document.getElementById('budgetTableBody');
+    const summaryRow = document.getElementById('summaryRow');
+    const actualTableHead = document.getElementById('actualTableHead');
+    const actualTableBody = document.getElementById('actualTableBody');
+    const actualSummaryRow = document.getElementById('actualSummaryRow');
+    const chartSvg = document.getElementById('budgetChart');
+
+    function getUrl(template, id) { return template.replace('PROJECT_ID', String(id)); }
+    function formatDay(value) {
+        const date = new Date(value);
+        return `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}`;
+    }
+    function periodLabel(period) { return `${formatDay(period.start)}\n${formatDay(period.end)}`; }
+
+    function setStatus(status) {
+        state.status = STATUS[status] ? status : 'NEW';
+        planStatusLabel.textContent = STATUS[state.status].label;
+        planStatusLabel.style.color = STATUS[state.status].color;
+        const locked = STATUS[state.status].locked;
+        document.getElementById('addRowButton').disabled = locked;
+        budgetTableBody.querySelectorAll('.hour-input, .employee-select, .remove-row').forEach((element) => {
+            element.disabled = locked;
+        });
+    }
+
+    function employeeOptions() {
+        if (employees.length === 0) return '<option value="">Нет сотрудников</option>';
+        return employees.map((employee) => `<option value="${employee.id}">${employee.name}</option>`).join('');
+    }
+
+    function updateRate(row) {
+        const employeeId = String(row.querySelector('.employee-select')?.value || '');
+        const employee = employeeMap.get(employeeId);
+        const rate = Number(employee?.hourlyRate || 0);
+        row.dataset.rate = String(rate);
+        row.querySelector('.rate-label').textContent = String(Math.round(rate));
+    }
+
+    function buildActualRows() {
+        const plannedRows = Array.from(budgetTableBody.querySelectorAll('tr')).map((row) => {
+            const employeeId = String(row.querySelector('.employee-select')?.value || '');
+            return {
+                employeeId,
+                plannedHours: Array.from(row.querySelectorAll('.hour-input')).map((input) => Number(input.value || 0)),
+            };
+        });
+
+        const included = new Set(plannedRows.map((row) => row.employeeId));
+        const extraRows = Object.keys(state.actualMatrix || {})
+            .filter((employeeId) => !included.has(String(employeeId)))
+            .map((employeeId) => ({ employeeId: String(employeeId), plannedHours: new Array(state.periods.length).fill(0) }));
+
+        return [...plannedRows, ...extraRows];
+    }
+
+    function createBudgetRow(employeeId = null, hours = []) {
+        const row = document.createElement('tr');
+        row.innerHTML = `<td><select class="form-select employee-select">${employeeOptions()}</select></td><td><span class="rate-label">0</span></td><td><button type="button" class="btn btn-danger remove-row">✕</button></td>`;
+
+        state.periods.forEach((_, index) => {
+            const cell = document.createElement('td');
+            cell.innerHTML = `<input type="number" min="0" step="0.1" class="form-control hour-input" value="${hours[index] ?? 0}">`;
+            row.appendChild(cell);
+        });
+
+        budgetTableBody.appendChild(row);
+        const select = row.querySelector('.employee-select');
+        select.value = String(employeeId ?? employees[0]?.id ?? '');
+        updateRate(row);
+    }
+
+    function renderHeaders() {
+        budgetTableHead.innerHTML = '';
+        actualTableHead.innerHTML = '';
+        summaryRow.querySelectorAll('.summary-cell').forEach((cell) => cell.remove());
+        actualSummaryRow.querySelectorAll('.actual-summary-cell').forEach((cell) => cell.remove());
+
+        const budgetHeader = document.createElement('tr');
+        budgetHeader.innerHTML = '<th>Сотрудник</th><th>Ставка</th><th></th>';
+        const actualHeader = document.createElement('tr');
+        actualHeader.innerHTML = '<th>Сотрудник</th><th>Ставка</th>';
+
+        state.periods.forEach((period, index) => {
+            const budgetHeadCell = document.createElement('th');
+            budgetHeadCell.style.whiteSpace = 'pre-line';
+            budgetHeadCell.textContent = periodLabel(period);
+            const actualHeadCell = budgetHeadCell.cloneNode(true);
+
+            if (state.currentIndex === index) {
+                budgetHeadCell.style.background = '#fff3cd';
+                actualHeadCell.style.background = '#fff3cd';
+            }
+
+            budgetHeader.appendChild(budgetHeadCell);
+            actualHeader.appendChild(actualHeadCell);
+
+            const summaryCell = document.createElement('td');
+            summaryCell.className = 'summary-cell';
+            summaryCell.textContent = '0';
+            summaryRow.appendChild(summaryCell);
+
+            const actualSummaryCell = document.createElement('td');
+            actualSummaryCell.className = 'actual-summary-cell';
+            actualSummaryCell.textContent = '0';
+            actualSummaryRow.appendChild(actualSummaryCell);
+        });
+
+        budgetTableHead.appendChild(budgetHeader);
+        actualTableHead.appendChild(actualHeader);
+    }
+
+    function calculateBudgetTotals() {
+        const totals = new Array(state.periods.length).fill(0);
+        budgetTableBody.querySelectorAll('tr').forEach((row) => {
+            const rate = Number(row.dataset.rate || 0);
+            row.querySelectorAll('.hour-input').forEach((input, index) => {
+                totals[index] += rate * Number(input.value || 0);
+            });
+        });
+
+        summaryRow.querySelectorAll('.summary-cell').forEach((cell, index) => {
+            cell.textContent = String(Math.round(totals[index] || 0));
+        });
+
+        return totals;
+    }
+
+    function getActualCellValue(employeeId, index, plannedValue) {
+        const isCurrent = state.currentIndex !== null && index === state.currentIndex;
+        const isFuture = state.currentIndex !== null && index > state.currentIndex;
+
+        if (!isCurrent && !isFuture) {
+            return Number(state.actualMatrix?.[employeeId]?.[index] || 0);
+        }
+
+        const approvedValue = Number(state.resourceApproved?.[employeeId] || 0);
+        if (isCurrent && approvedValue > 0) {
+            return approvedValue;
+        }
+
+        const manualKey = `${employeeId}_${index}`;
+        if (Object.prototype.hasOwnProperty.call(state.actualManual, manualKey)) {
+            return Number(state.actualManual[manualKey] || 0);
+        }
+
+        return Number(plannedValue || 0);
+    }
+
+    function renderActualTable() {
+        actualTableBody.innerHTML = '';
+        const totals = new Array(state.periods.length).fill(0);
+        const rows = buildActualRows();
+
+        rows.forEach((rowData) => {
+            const employeeId = String(rowData.employeeId);
+            const employee = employeeMap.get(employeeId);
+            const rate = Number(employee?.hourlyRate || 0);
+            const name = employee?.name || `Пользователь_${employeeId}`;
+
+            const row = document.createElement('tr');
+            row.innerHTML = `<td>${name}</td><td>${Math.round(rate)}</td>`;
+
+            state.periods.forEach((_, index) => {
+                const plannedValue = rowData.plannedHours[index] || 0;
+                const value = getActualCellValue(employeeId, index, plannedValue);
+                const isCurrent = state.currentIndex !== null && index === state.currentIndex;
+                const isFuture = state.currentIndex !== null && index > state.currentIndex;
+
+                const cell = document.createElement('td');
+                if (isCurrent) {
+                    cell.style.background = '#fff3cd';
+                }
+
+                if (isCurrent || isFuture) {
+                    const input = document.createElement('input');
+                    input.type = 'number';
+                    input.step = '0.1';
+                    input.min = '0';
+                    input.className = 'form-control actual-input';
+                    input.dataset.employeeId = employeeId;
+                    input.dataset.index = String(index);
+                    input.value = String(value);
+                    if (isCurrent && Number(state.resourceApproved?.[employeeId] || 0) > 0) {
+                        input.disabled = true;
+                    }
+                    cell.appendChild(input);
+                } else {
+                    cell.textContent = String(Math.round(value));
+                }
+
+                totals[index] += rate * Number(value || 0);
+                row.appendChild(cell);
+            });
+
+            actualTableBody.appendChild(row);
+        });
+
+        actualSummaryRow.querySelectorAll('.actual-summary-cell').forEach((cell, index) => {
+            cell.textContent = String(Math.round(totals[index] || 0));
+        });
+
+        return totals;
+    }
+
+    function drawChart(budgetTotals, actualTotals) {
+        if (state.periods.length === 0) {
+            chartSvg.innerHTML = '';
+            return;
+        }
+
+        const budget = Number(state.activeProject?.budget || 0);
+        const buildSeries = (totals) => {
+            const values = [budget];
+            totals.forEach((total) => values.push(values[values.length - 1] - total));
+            return values;
+        };
+
+        const planned = buildSeries(budgetTotals);
+        const actual = buildSeries(actualTotals);
+        const labels = state.periods.map((period) => `${formatDay(period.start)}-${formatDay(period.end)}`);
+        labels.push(`${labels[labels.length - 1]}+1`);
+
+        const width = 1000;
+        const height = 320;
+        const padding = { left: 70, right: 20, top: 20, bottom: 70 };
+        const innerWidth = width - padding.left - padding.right;
+        const innerHeight = height - padding.top - padding.bottom;
+
+        const allValues = [...planned, ...actual, 0];
+        const min = Math.min(...allValues);
+        const max = Math.max(...allValues);
+        const range = Math.max(max - min, 1);
+
+        const pointX = (index, count) => padding.left + (index * innerWidth) / Math.max(count - 1, 1);
+        const pointY = (value) => padding.top + ((max - value) / range) * innerHeight;
+
+        const points = (values) => values.map((value, index) => `${pointX(index, values.length)},${pointY(value)}`).join(' ');
+
+        chartSvg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+        chartSvg.innerHTML = `
+            <line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${height - padding.bottom}" stroke="#444"/>
+            <line x1="${padding.left}" y1="${height - padding.bottom}" x2="${width - padding.right}" y2="${height - padding.bottom}" stroke="#444"/>
+            <polyline fill="none" stroke="#206bc4" stroke-width="2" points="${points(planned)}"/>
+            <polyline fill="none" stroke="#000000" stroke-width="2" points="${points(actual)}"/>
+            ${labels.map((label, index) => `<text x="${pointX(index, labels.length)}" y="${height - padding.bottom + 18}" text-anchor="middle" font-size="10">${label}</text>`).join('')}
+        `;
+    }
+
+    function getRowsPayload() {
+        return Array.from(budgetTableBody.querySelectorAll('tr')).map((row) => ({
+            employeeId: row.querySelector('.employee-select')?.value ?? null,
+            hours: Array.from(row.querySelectorAll('.hour-input')).map((input) => input.value),
+        }));
+    }
+
+    async function loadSavedPlan(projectId) {
+        const response = await fetch(getUrl(planGetUrlTemplate, projectId));
+        if (!response.ok) return {status: 'NEW', rows: []};
+        return response.json();
+    }
+
+    async function loadActual(projectId) {
+        const response = await fetch(getUrl(actualCostsUrlTemplate, projectId));
+        if (!response.ok) return {weeks: [], matrix: {}, currentIndex: null, resourceApproved: {}};
+        return response.json();
+    }
+
+    async function savePlan(status) {
+        if (!state.activeProject) return;
+        const response = await fetch(getUrl(planStatusUrlTemplate, state.activeProject.id), {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ status, rows: getRowsPayload() }),
+        });
+        if (!response.ok) return;
+        const payload = await response.json();
+        setStatus(payload.status || status);
+    }
+
+    function renderEverything() {
+        const budgetTotals = calculateBudgetTotals();
+        const actualTotals = renderActualTable();
+        drawChart(budgetTotals, actualTotals);
+    }
+
+    async function applyProject(projectId) {
+        state.activeProject = projects.find((project) => String(project.id) === String(projectId)) || null;
+        if (!state.activeProject) return;
+
+        state.actualManual = {};
+        const [saved, actual] = await Promise.all([loadSavedPlan(projectId), loadActual(projectId)]);
+        state.periods = Array.isArray(actual.weeks) ? actual.weeks : [];
+        state.actualMatrix = actual.matrix || {};
+        state.currentIndex = Number.isInteger(actual.currentIndex) ? actual.currentIndex : null;
+        state.resourceApproved = actual.resourceApproved || {};
+
+        renderHeaders();
+        budgetTableBody.innerHTML = '';
+
+        const rows = Array.isArray(saved.rows) && saved.rows.length > 0 ? saved.rows : [{}, {}, {}];
+        rows.forEach((row) => createBudgetRow(row.employeeId ?? null, Array.isArray(row.hours) ? row.hours : []));
+
+        setStatus(saved.status || 'NEW');
+        renderEverything();
+    }
+
+    document.getElementById('addRowButton').addEventListener('click', () => {
+        createBudgetRow();
+        setStatus(state.status);
+        renderEverything();
+    });
+    document.getElementById('buildChartButton').addEventListener('click', renderEverything);
+    document.getElementById('sendForApprovalButton').addEventListener('click', () => savePlan('SENT'));
+    document.getElementById('approvePlanButton').addEventListener('click', () => { if (isAdmin) savePlan('APPROVED'); });
+    document.getElementById('rejectPlanButton').addEventListener('click', () => { if (isAdmin) savePlan('REJECTED'); });
+
+    projectSelect.addEventListener('change', () => applyProject(projectSelect.value));
+
+    budgetTableBody.addEventListener('change', (event) => {
+        if (event.target.classList.contains('employee-select')) {
+            updateRate(event.target.closest('tr'));
+            renderEverything();
+        }
+    });
+    budgetTableBody.addEventListener('input', (event) => {
+        if (event.target.classList.contains('hour-input')) {
+            renderEverything();
+        }
+    });
+    budgetTableBody.addEventListener('click', (event) => {
+        if (event.target.classList.contains('remove-row')) {
+            event.target.closest('tr').remove();
+            renderEverything();
+        }
+    });
+
+    actualTableBody.addEventListener('input', (event) => {
+        if (!event.target.classList.contains('actual-input')) return;
+        const employeeId = String(event.target.dataset.employeeId || '');
+        const index = String(event.target.dataset.index || '0');
+        state.actualManual[`${employeeId}_${index}`] = Number(event.target.value || 0);
+        const budgetTotals = calculateBudgetTotals();
+        const actualTotals = renderActualTable();
+        drawChart(budgetTotals, actualTotals);
+    });
+
+    if (projectSelect.value) {
+        applyProject(projectSelect.value);
+    }
 })();
 </script>
 {% endblock %}

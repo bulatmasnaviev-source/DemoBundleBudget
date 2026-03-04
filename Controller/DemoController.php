@@ -205,16 +205,20 @@ final class DemoController extends AbstractController
             return new JsonResponse(['weeks' => [], 'matrix' => []]);
         }
 
-        $periodStart = (new \DateTimeImmutable($start->format('Y-m-d')))->modify('monday this week')->modify('-1 week')->setTime(0, 0, 0);
-        $periodEnd = (new \DateTimeImmutable($end->format('Y-m-d')))->modify('sunday this week')->modify('+2 week')->setTime(23, 59, 59);
+        $projectStartWeek = (new \DateTimeImmutable($start->format('Y-m-d')))->modify('monday this week')->setTime(0, 0, 0);
+        $projectEndWeek = (new \DateTimeImmutable($end->format('Y-m-d')))->modify('monday this week')->setTime(0, 0, 0);
+        $periodStart = $projectStartWeek->modify('-2 week');
 
         $biweeks = [];
-        $cursor = $periodStart;
-        while ($cursor <= $periodEnd) {
-            $biweekEnd = $cursor->modify('+13 day');
-            $biweeks[] = ['start' => $cursor, 'end' => $biweekEnd];
-            $cursor = $cursor->modify('+2 week');
+        for ($cursor = $periodStart; $cursor <= $projectEndWeek; $cursor = $cursor->modify('+2 week')) {
+            $biweeks[] = ['start' => $cursor, 'end' => $cursor->modify('+13 day')];
         }
+        $lastBiweek = end($biweeks);
+        $lastStart = \is_array($lastBiweek) && isset($lastBiweek['start']) ? $lastBiweek['start'] : $periodStart;
+        $nextStart = $lastStart->modify('+2 week');
+        $biweeks[] = ['start' => $nextStart, 'end' => $nextStart->modify('+13 day')];
+
+        $periodEnd = end($biweeks)['end']->setTime(23, 59, 59);
 
         $matrix = [];
         $approvedWeekMap = $this->getApprovedWeekMap($periodStart, $periodEnd);
