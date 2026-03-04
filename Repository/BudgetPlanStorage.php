@@ -17,8 +17,19 @@ final class BudgetPlanStorage
 
     public function loadByProjectId(int $projectId): ?array
     {
-        $name = self::PREFIX . $projectId;
+        return $this->loadByName(self::PREFIX . $projectId);
+    }
 
+    public function saveByProjectId(int $projectId, string $status, array $rows): void
+    {
+        $this->saveByName(self::PREFIX . $projectId, [
+            'status' => $status,
+            'rows' => $rows,
+        ]);
+    }
+
+    public function loadByName(string $name): ?array
+    {
         try {
             $value = $this->connection->fetchOne('SELECT value FROM kimai2_demo WHERE name = :name', ['name' => $name]);
 
@@ -34,13 +45,9 @@ final class BudgetPlanStorage
         }
     }
 
-    public function saveByProjectId(int $projectId, string $status, array $rows): void
+    public function saveByName(string $name, array $data): void
     {
-        $name = self::PREFIX . $projectId;
-        $payload = json_encode([
-            'status' => $status,
-            'rows' => $rows,
-        ], JSON_THROW_ON_ERROR);
+        $payload = json_encode($data, JSON_THROW_ON_ERROR);
 
         try {
             $id = $this->connection->fetchOne('SELECT id FROM kimai2_demo WHERE name = :name', ['name' => $name]);
@@ -56,10 +63,7 @@ final class BudgetPlanStorage
 
             $this->connection->update('kimai2_demo', ['value' => $payload], ['id' => (int) $id]);
         } catch (\Throwable) {
-            $this->saveToFallback($name, [
-                'status' => $status,
-                'rows' => $rows,
-            ]);
+            $this->saveToFallback($name, $data);
         }
     }
 

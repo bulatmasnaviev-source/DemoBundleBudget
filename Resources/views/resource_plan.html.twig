@@ -1,0 +1,45 @@
+{% extends 'base.html.twig' %}
+
+{% block main %}
+<div class="card">
+  <div class="card-header"><h3 class="card-title">Ресурсное планирование</h3></div>
+  <div class="card-body">
+    <div class="mb-2 fw-bold">Выбор интервала планирования</div>
+    <div class="row g-3 mb-3"><div class="col-md-4"><select id="intervalSelect" class="form-select"></select></div></div>
+    <div class="mb-2"><strong>Статус:</strong> <span id="statusLabel">Новое</span></div>
+    <div class="d-flex gap-2 mb-3">
+      <button id="sentButton" class="btn btn-secondary">На обсуждение</button>
+      <button id="rejectButton" class="btn btn-warning" {% if not is_admin %}disabled{% endif %}>Отклонено</button>
+      <button id="approveButton" class="btn btn-success" {% if not is_admin %}disabled{% endif %}>Согласовать</button>
+    </div>
+    <div class="table-responsive"><table class="table table-bordered" id="resourceTable"><thead id="resourceHead"></thead><tbody id="resourceBody"></tbody></table></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block javascripts %}
+{{ parent() }}
+<script>
+(() => {
+const projects={{ projects|json_encode|raw }};
+const employees={{ employees|json_encode|raw }};
+const year={{ year }};
+const getUrl='{{ path('demo_resource_plan_get', {year:'YEAR', interval:'INTERVAL'}) }}';
+const postUrl='{{ path('demo_resource_plan_status', {year:'YEAR', interval:'INTERVAL'}) }}';
+const STATUS={NEW:{label:'Новое',locked:false,color:'#000'},SENT:{label:'На обсуждении',locked:true,color:'#6c757d'},REJECTED:{label:'Отклонено',locked:false,color:'#ffc107'},APPROVED:{label:'Согласовано',locked:true,color:'#198754'}};
+const state={intervals:[],idx:0,status:'NEW',matrix:{}};
+const $=id=>document.getElementById(id);
+const fmt=d=>`${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}`;
+function buildIntervals(y){const s=new Date(y,0,1); while(s.getDay()!==1) s.setDate(s.getDate()-1); const e=new Date(y,11,31); while(e.getDay()!==0) e.setDate(e.getDate()+1); const arr=[]; const c=new Date(s); while(c<=e){const to=new Date(c);to.setDate(to.getDate()+13); arr.push({start:new Date(c), end:to, label:`${fmt(c)}-${fmt(to)}`}); c.setDate(c.getDate()+14);} return arr;}
+function setStatus(v){state.status=STATUS[v]?v:'NEW'; $('statusLabel').textContent=STATUS[state.status].label; $('statusLabel').style.color=STATUS[state.status].color; const locked=STATUS[state.status].locked; document.querySelectorAll('#resourceBody input').forEach(i=>i.disabled=locked);}
+function renderSelect(){state.intervals=buildIntervals(year); $('intervalSelect').innerHTML=state.intervals.map((it,i)=>`<option value="${i}">${it.label}</option>`).join('');}
+function renderTable(){const hr=document.createElement('tr'); hr.innerHTML='<th>Проект</th>'; employees.forEach(e=>{const th=document.createElement('th'); th.textContent=e.shortName||e.name; hr.appendChild(th);}); $('resourceHead').innerHTML=''; $('resourceHead').appendChild(hr); $('resourceBody').innerHTML=''; projects.forEach(p=>{const tr=document.createElement('tr'); tr.innerHTML=`<td>${p.name}</td>`; employees.forEach(e=>{const td=document.createElement('td'); const v=state.matrix[String(p.id)]?.[String(e.id)]??''; td.innerHTML=`<input class="form-control cell" data-project="${p.id}" data-employee="${e.id}" type="number" min="0" step="0.1" value="${v}">`; tr.appendChild(td);}); $('resourceBody').appendChild(tr);}); setStatus(state.status);}
+function collect(){const m={}; document.querySelectorAll('#resourceBody input.cell').forEach(i=>{const p=i.dataset.project, e=i.dataset.employee; if(!m[p]) m[p]={}; m[p][e]=Number(i.value||0);}); return m;}
+async function load(){const url=getUrl.replace('YEAR',String(year)).replace('INTERVAL',String(state.idx)); const r=await fetch(url); if(!r.ok){state.status='NEW'; state.matrix={}; renderTable(); return;} const p=await r.json(); state.status=p.status||'NEW'; state.matrix=p.matrix||{}; renderTable();}
+async function save(status){const url=postUrl.replace('YEAR',String(year)).replace('INTERVAL',String(state.idx)); const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status,matrix:collect()})}); if(r.ok){const p=await r.json(); state.status=p.status; setStatus(state.status);}}
+$('intervalSelect').addEventListener('change',e=>{state.idx=Number(e.target.value||0); load();});
+$('sentButton').addEventListener('click',()=>save('SENT')); $('rejectButton').addEventListener('click',()=>save('REJECTED')); $('approveButton').addEventListener('click',()=>save('APPROVED'));
+renderSelect(); load();
+})();
+</script>
+{% endblock %}

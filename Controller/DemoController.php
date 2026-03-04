@@ -63,23 +63,8 @@ final class DemoController extends AbstractController
         $page->setActionName('demo');
         $page->setActionPayload(['counter' => $entity->getCounter()]);
 
-        $projects = $this->entityManager->getRepository(Project::class)->findAll();
-        usort($projects, static fn (Project $a, Project $b) => strcasecmp($a->getName(), $b->getName()));
-
-        $projectData = [];
-        foreach ($projects as $project) {
-            $start = method_exists($project, 'getStart') ? $project->getStart() : null;
-            $end = method_exists($project, 'getEnd') ? $project->getEnd() : null;
-            $budget = method_exists($project, 'getBudget') ? $project->getBudget() : null;
-
-            $projectData[] = [
-                'id' => $project->getId(),
-                'name' => $project->getName(),
-                'start' => $start instanceof \DateTimeInterface ? $start->format('Y-m-d') : null,
-                'end' => $end instanceof \DateTimeInterface ? $end->format('Y-m-d') : null,
-                'budget' => is_numeric($budget) ? (float) $budget : 0.0,
-            ];
-        }
+        $projects = $this->getProjects();
+        $projectData = $this->buildProjectData($projects);
 
         $activeProjectStatuses = [];
         foreach ($projects as $project) {
@@ -102,32 +87,7 @@ final class DemoController extends AbstractController
             ];
         }
 
-        $users = $this->entityManager->getRepository(User::class)->findBy([], ['alias' => 'ASC']);
-        $employees = [];
-        foreach ($users as $user) {
-            $alias = method_exists($user, 'getAlias') ? (string) $user->getAlias() : '';
-            if ($alias === '' && method_exists($user, 'getDisplayName')) {
-                $alias = (string) $user->getDisplayName();
-            }
-            if ($alias === '' && method_exists($user, 'getUsername')) {
-                $alias = (string) $user->getUsername();
-            }
-
-            $hourlyRate = 0.0;
-            if (method_exists($user, 'getPreferenceValue')) {
-                $value = $user->getPreferenceValue('hourly_rate', 0);
-                $hourlyRate = is_numeric($value) ? (float) $value : 0.0;
-            } elseif (method_exists($user, 'getHourlyRate')) {
-                $value = $user->getHourlyRate();
-                $hourlyRate = is_numeric($value) ? (float) $value : 0.0;
-            }
-
-            $employees[] = [
-                'id' => $user->getId(),
-                'name' => $alias !== '' ? $alias : 'User #' . $user->getId(),
-                'hourlyRate' => $hourlyRate,
-            ];
-        }
+        $employees = $this->buildEmployeeData();
 
         return $this->render('@Demo/index.html.twig', [
             'page_setup' => $page,
@@ -145,6 +105,51 @@ final class DemoController extends AbstractController
             // TODO - unused
             'form' => $form->createView(),
         ]);
+    }
+
+    #[Route(path: '/resource-plan', name: 'demo_resource_plan', methods: ['GET'])]
+    public function resourcePlan(): Response
+    {
+        return $this->render('@Demo/resource_plan.html.twig', [
+            'projects' => $this->buildProjectData($this->getActiveProjects()),
+            'employees' => $this->buildEmployeeData(),
+            'year' => (int) (new \DateTimeImmutable())->format('Y'),
+            'is_admin' => $this->isGranted('ROLE_ADMIN'),
+        ]);
+    }
+
+    #[Route(path: '/resource-plan/{year}/{interval}', name: 'demo_resource_plan_get', methods: ['GET'])]
+    public function getResourcePlan(int $year, int $interval): JsonResponse
+    {
+        $payload = $this->budgetPlanStorage->loadByName($this->resourcePlanKey($year, $interval));
+
+        if ($payload === null) {
+            return new JsonResponse(['status' => 'NEW', 'matrix' => []]);
+        }
+
+        return new JsonResponse([
+            'status' => $this->normalizePlanStatus((string) ($payload['status'] ?? 'NEW')),
+            'matrix' => \is_array($payload['matrix'] ?? null) ? $payload['matrix'] : [],
+        ]);
+    }
+
+    #[Route(path: '/resource-plan/{year}/{interval}/status', name: 'demo_resource_plan_status', methods: ['POST'])]
+    public function setResourcePlan(int $year, int $interval, Request $request): JsonResponse
+    {
+        $payload = json_decode($request->getContent(), true);
+        $status = $this->normalizePlanStatus((string) ($payload['status'] ?? 'NEW'));
+        $matrix = \is_array($payload['matrix'] ?? null) ? $payload['matrix'] : [];
+
+        if (\in_array($status, ['APPROVED', 'REJECTED'], true) && !$this->isGranted('ROLE_ADMIN')) {
+            throw $this->createAccessDeniedException('Only admins can approve or reject the plan.');
+        }
+
+        $this->budgetPlanStorage->saveByName($this->resourcePlanKey($year, $interval), [
+            'status' => $status,
+            'matrix' => $matrix,
+        ]);
+
+        return new JsonResponse(['status' => $status, 'matrix' => $matrix]);
     }
 
 
@@ -203,16 +208,12 @@ final class DemoController extends AbstractController
         $periodStart = (new \DateTimeImmutable($start->format('Y-m-d')))->modify('monday this week')->modify('-1 week')->setTime(0, 0, 0);
         $periodEnd = (new \DateTimeImmutable($end->format('Y-m-d')))->modify('sunday this week')->modify('+2 week')->setTime(23, 59, 59);
 
-        $weeks = [];
+        $biweeks = [];
         $cursor = $periodStart;
         while ($cursor <= $periodEnd) {
-            $weeks[] = $cursor;
-            $cursor = $cursor->modify('+1 week');
-        }
-
-        $indexByWeekStart = [];
-        foreach ($weeks as $idx => $weekStart) {
-            $indexByWeekStart[$weekStart->format('Y-m-d')] = $idx;
+            $biweekEnd = $cursor->modify('+13 day');
+            $biweeks[] = ['start' => $cursor, 'end' => $biweekEnd];
+            $cursor = $cursor->modify('+2 week');
         }
 
         $matrix = [];
@@ -233,16 +234,17 @@ final class DemoController extends AbstractController
                 continue;
             }
 
-            $weekStart = (new \DateTimeImmutable($timesheet->getBegin()->format('Y-m-d')))->modify('monday this week')->format('Y-m-d');
-            if (!isset($indexByWeekStart[$weekStart])) {
+            $weekStart = (new \DateTimeImmutable($timesheet->getBegin()->format('Y-m-d')))->modify('monday this week');
+            $biweekIndex = $this->findBiweekIndex($biweeks, $weekStart);
+
+            if ($biweekIndex === null) {
                 continue;
             }
 
             $userId = (string) $timesheet->getUser()->getId();
-            if (\is_array($approvedWeekMap) && !isset($approvedWeekMap[$userId . '|' . $weekStart])) {
+            if (\is_array($approvedWeekMap) && !isset($approvedWeekMap[$userId . '|' . $weekStart->format('Y-m-d')])) {
                 continue;
             }
-            $weekIndex = $indexByWeekStart[$weekStart];
 
             $duration = max(0, (int) $timesheet->getDuration());
             $entryHours = $duration / 3600;
@@ -251,22 +253,156 @@ final class DemoController extends AbstractController
                 $matrix[$userId] = [];
             }
 
-            if (!isset($matrix[$userId][$weekIndex])) {
-                $matrix[$userId][$weekIndex] = 0.0;
+            if (!isset($matrix[$userId][$biweekIndex])) {
+                $matrix[$userId][$biweekIndex] = 0.0;
             }
 
-            $matrix[$userId][$weekIndex] += (float) $entryHours;
+            $matrix[$userId][$biweekIndex] += (float) $entryHours;
+        }
+
+        $currentBiweekIndex = $this->findBiweekIndex($biweeks, new \DateTimeImmutable('today'));
+        $resourceApproved = [];
+        if ($currentBiweekIndex !== null) {
+            $intervalStart = $biweeks[$currentBiweekIndex]['start'];
+            $interval = $this->getYearBiweeklyIntervals((int) $intervalStart->format('Y'));
+            foreach ($interval as $idx => $item) {
+                if ($item['start']->format('Y-m-d') !== $intervalStart->format('Y-m-d')) {
+                    continue;
+                }
+                $resource = $this->budgetPlanStorage->loadByName($this->resourcePlanKey((int) $intervalStart->format('Y'), $idx));
+                if (\is_array($resource) && ($resource['status'] ?? 'NEW') === 'APPROVED' && \is_array($resource['matrix'] ?? null)) {
+                    $resourceApproved = $resource['matrix'][(string) $project->getId()] ?? [];
+                }
+                break;
+            }
         }
 
         return new JsonResponse([
-            'weeks' => array_map(static function (\DateTimeImmutable $weekStart): array {
+            'weeks' => array_map(static function (array $biweek): array {
                 return [
-                    'start' => $weekStart->format('Y-m-d'),
-                    'label' => 'W' . $weekStart->format('W') . '-' . $weekStart->format('y'),
+                    'start' => $biweek['start']->format('Y-m-d'),
+                    'end' => $biweek['end']->format('Y-m-d'),
                 ];
-            }, $weeks),
+            }, $biweeks),
             'matrix' => $matrix,
+            'currentIndex' => $currentBiweekIndex,
+            'resourceApproved' => $resourceApproved,
         ]);
+    }
+
+    private function findBiweekIndex(array $biweeks, \DateTimeImmutable $date): ?int
+    {
+        foreach ($biweeks as $idx => $biweek) {
+            if ($date >= $biweek['start'] && $date <= $biweek['end']) {
+                return $idx;
+            }
+        }
+
+        return null;
+    }
+
+    private function getProjects(): array
+    {
+        $projects = $this->entityManager->getRepository(Project::class)->findAll();
+        usort($projects, static fn (Project $a, Project $b) => strcasecmp($a->getName(), $b->getName()));
+
+        return $projects;
+    }
+
+    private function getActiveProjects(): array
+    {
+        return array_values(array_filter($this->getProjects(), static function (Project $project): bool {
+            if (method_exists($project, 'isVisible')) {
+                return (bool) $project->isVisible();
+            }
+            if (method_exists($project, 'getVisible')) {
+                return (bool) $project->getVisible();
+            }
+
+            return true;
+        }));
+    }
+
+    private function buildProjectData(array $projects): array
+    {
+        $projectData = [];
+        foreach ($projects as $project) {
+            if (!$project instanceof Project) {
+                continue;
+            }
+            $start = method_exists($project, 'getStart') ? $project->getStart() : null;
+            $end = method_exists($project, 'getEnd') ? $project->getEnd() : null;
+            $budget = method_exists($project, 'getBudget') ? $project->getBudget() : null;
+            $projectData[] = [
+                'id' => $project->getId(),
+                'name' => $project->getName(),
+                'start' => $start instanceof \DateTimeInterface ? $start->format('Y-m-d') : null,
+                'end' => $end instanceof \DateTimeInterface ? $end->format('Y-m-d') : null,
+                'budget' => is_numeric($budget) ? (float) $budget : 0.0,
+            ];
+        }
+
+        return $projectData;
+    }
+
+    private function buildEmployeeData(): array
+    {
+        $users = $this->entityManager->getRepository(User::class)->findBy([], ['alias' => 'ASC']);
+        $employees = [];
+        foreach ($users as $user) {
+            $alias = method_exists($user, 'getAlias') ? (string) $user->getAlias() : '';
+            if ($alias === '' && method_exists($user, 'getDisplayName')) {
+                $alias = (string) $user->getDisplayName();
+            }
+            if ($alias === '' && method_exists($user, 'getUsername')) {
+                $alias = (string) $user->getUsername();
+            }
+
+            $hourlyRate = 0.0;
+            if (method_exists($user, 'getPreferenceValue')) {
+                $value = $user->getPreferenceValue('hourly_rate', 0);
+                $hourlyRate = is_numeric($value) ? (float) $value : 0.0;
+            } elseif (method_exists($user, 'getHourlyRate')) {
+                $value = $user->getHourlyRate();
+                $hourlyRate = is_numeric($value) ? (float) $value : 0.0;
+            }
+
+            $employees[] = [
+                'id' => $user->getId(),
+                'name' => $alias !== '' ? $alias : 'User #' . $user->getId(),
+                'shortName' => $this->buildShortName($alias !== '' ? $alias : ('User ' . $user->getId())),
+                'hourlyRate' => $hourlyRate,
+            ];
+        }
+
+        return $employees;
+    }
+
+    private function buildShortName(string $name): string
+    {
+        $parts = preg_split('/\s+/', trim($name));
+        if (!\is_array($parts) || count($parts) < 2) {
+            return $name;
+        }
+
+        return $parts[1] . ' ' . mb_substr($parts[0], 0, 1) . '.';
+    }
+
+    private function getYearBiweeklyIntervals(int $year): array
+    {
+        $start = (new \DateTimeImmutable(sprintf('%d-01-01', $year)))->modify('monday this week');
+        $end = (new \DateTimeImmutable(sprintf('%d-12-31', $year)))->modify('sunday this week');
+        $intervals = [];
+        for ($cursor = $start; $cursor <= $end; $cursor = $cursor->modify('+2 week')) {
+            $intervals[] = ['start' => $cursor, 'end' => $cursor->modify('+13 day')];
+        }
+
+        return $intervals;
+    }
+
+    private function resourcePlanKey(int $year, int $interval): string
+    {
+        return sprintf('resource_plan_%d_%d', $year, $interval);
     }
 
 
