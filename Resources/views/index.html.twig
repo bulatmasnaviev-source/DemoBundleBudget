@@ -145,22 +145,29 @@
             function getPlanUrl(template, projectId) { return template.replace('PROJECT_ID', String(projectId)); }
             function getMonday(date) { const r = new Date(date); const d=r.getDay(); r.setDate(r.getDate() + (d===0?-6:1-d)); r.setHours(0,0,0,0); return r; }
             function getSunday(date) { const s = getMonday(date); s.setDate(s.getDate()+6); s.setHours(23,59,59,999); return s; }
-            function getIsoWeek(date) {
-                const t = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-                const dn = (t.getUTCDay()+6)%7; t.setUTCDate(t.getUTCDate()-dn+3);
-                const ft = new Date(Date.UTC(t.getUTCFullYear(),0,4)); const fdn=(ft.getUTCDay()+6)%7; ft.setUTCDate(ft.getUTCDate()-fdn+3);
-                return 1 + Math.round((t-ft)/604800000);
+            function formatShortDate(date) {
+                const day = String(date.getDate()).padStart(2, '0');
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                return `${day}.${month}`;
             }
-            function getWeekLabel(weekStart) { return `W${getIsoWeek(weekStart)}-${String(weekStart.getFullYear()).slice(-2)}`; }
+            function getTwoWeekLabel(periodStart) {
+                const periodEnd = new Date(periodStart);
+                periodEnd.setDate(periodEnd.getDate() + 13);
+                return `${formatShortDate(periodStart)}\n${formatShortDate(periodEnd)}`;
+            }
 
             function buildWeeks() {
                 if (!state.activeProject || !state.activeProject.start || !state.activeProject.end) return [];
                 const startDate = new Date(state.activeProject.start); const endDate = new Date(state.activeProject.end);
                 if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || startDate > endDate) return [];
-                const periodStart = getMonday(startDate); periodStart.setDate(periodStart.getDate() - 7);
+                const periodStart = getMonday(startDate); periodStart.setDate(periodStart.getDate() - 14);
                 const periodEnd = getSunday(endDate); periodEnd.setDate(periodEnd.getDate() + 14);
                 const weeks = []; const cursor = new Date(periodStart);
-                while (cursor <= periodEnd) { const ws = new Date(cursor); weeks.push({label:getWeekLabel(ws), start: ws.toISOString().slice(0,10)}); cursor.setDate(cursor.getDate()+7); }
+                while (cursor <= periodEnd) {
+                    const intervalStart = new Date(cursor);
+                    weeks.push({label:getTwoWeekLabel(intervalStart), start: intervalStart.toISOString().slice(0,10)});
+                    cursor.setDate(cursor.getDate()+14);
+                }
                 return weeks;
             }
 
@@ -241,9 +248,9 @@
                 const hr = document.createElement('tr'); hr.innerHTML = '<th>ФИО сотрудника</th><th>Часовая ставка</th><th>Действия</th>';
                 const hr2 = document.createElement('tr'); hr2.innerHTML = '<th>ФИО сотрудника</th><th>Часовая ставка</th>';
                 state.weeks.forEach((week) => {
-                    const th = document.createElement('th'); th.textContent = week.label; th.style.minWidth = '9rem'; hr.appendChild(th);
+                    const th = document.createElement('th'); th.textContent = week.label; th.style.whiteSpace = 'pre-line'; th.style.minWidth = '9rem'; hr.appendChild(th);
                     const s = document.createElement('td'); s.className = 'summary-cell'; s.style.minWidth = '9rem'; s.textContent = '0'; summaryRow.appendChild(s);
-                    const th2 = document.createElement('th'); th2.textContent = week.label; th2.style.minWidth = '9rem'; hr2.appendChild(th2);
+                    const th2 = document.createElement('th'); th2.textContent = week.label; th2.style.whiteSpace = 'pre-line'; th2.style.minWidth = '9rem'; hr2.appendChild(th2);
                     const s2 = document.createElement('td'); s2.className = 'actual-summary-cell'; s2.style.minWidth = '9rem'; s2.textContent = '0'; actualSummaryRow.appendChild(s2);
                 });
                 tableHead.appendChild(hr); actualTableHead.appendChild(hr2);
@@ -295,8 +302,9 @@
                     tr.innerHTML = `<td>${employee.name}</td><td>${employee.rate}</td>`;
 
                     for (let i = 0; i < state.weeks.length; i++) {
-                        const v = Number(state.actualMatrix[rowData.employeeId]?.[i] || 0);
-                        const hours = Math.round(v);
+                        const firstWeekHours = Number(state.actualMatrix[rowData.employeeId]?.[i * 2] || 0);
+                        const secondWeekHours = Number(state.actualMatrix[rowData.employeeId]?.[(i * 2) + 1] || 0);
+                        const hours = Math.round(firstWeekHours + secondWeekHours);
                         totals[i] += hours * employee.rate;
 
                         const plannedHours = rowData.plannedHours[i] || 0;
@@ -392,9 +400,11 @@
 
                 const buildPolyline = (pts, color) => `<polyline fill="none" stroke="${color}" stroke-width="2" points="${pts.map((pt) => `${pt.x},${pt.y}`).join(' ')}" />`;
 
-                const xLabels = state.weeks.map((week) => week.label);
-                const lastWeekLabel = xLabels.length > 0 ? `${xLabels[xLabels.length - 1]}+1` : 'W+1';
-                xLabels.push(lastWeekLabel);
+                const xLabels = [...state.weeks.map((week) => week.label), ''];
+                const buildAxisLabel = (pt, label) => {
+                    const lines = String(label || '').split('\n');
+                    return `<text x="${pt.x}" y="${h - p.bottom + 18}" text-anchor="middle" font-size="11">${lines.map((line, index) => `<tspan x="${pt.x}" dy="${index === 0 ? 0 : 12}">${line}</tspan>`).join('')}</text>`;
+                };
 
                 chartSvg.setAttribute('viewBox', `0 0 ${w} ${h}`);
                 chartSvg.innerHTML = `
@@ -405,7 +415,7 @@
                     ${buildPlannedSegments(plannedPts)}
                     ${actualPts.map((pt) => `<circle cx="${pt.x}" cy="${pt.y}" r="3" fill="#000000" />`).join('')}
                     ${plannedPts.map((pt) => `<circle cx="${pt.x}" cy="${pt.y}" r="3" fill="${pt.value < 0 ? '#dc3545' : '#206bc4'}" />`).join('')}
-                    ${plannedPts.map((pt, idx) => `<text x="${pt.x}" y="${h - p.bottom + 20}" text-anchor="middle" font-size="11">${xLabels[idx] || ''}</text>`).join('')}
+                    ${plannedPts.map((pt, idx) => buildAxisLabel(pt, xLabels[idx] || '')).join('')}
                     ${plannedPts.map((pt) => `<text x="${pt.x}" y="${pt.y - 10}" text-anchor="middle" font-size="10" fill="#206bc4">${Math.round(pt.value)}</text>`).join('')}
                     ${actualPts.map((pt) => `<text x="${pt.x}" y="${pt.y + 14}" text-anchor="middle" font-size="10" fill="#000000">${Math.round(pt.value)}</text>`).join('')}
                 `;
