@@ -124,7 +124,7 @@
                 REJECTED: {label: 'Отклонено', color: '#ffc107', locked: false}
             };
 
-            const state = {weeks: [], activeProject: null, activeBudget: 0, status: 'NEW', actualMatrix: {}, actualTotals: []};
+            const state = {weeks: [], activeProject: null, activeBudget: 0, status: 'NEW', actualMatrix: {}, actualTotals: [], actualOverrides: {}};
             const employeeMap = new Map(employees.map((employee) => [String(employee.id), employee]));
 
             const projectSelect = document.getElementById('projectSelect');
@@ -169,6 +169,51 @@
                     cursor.setDate(cursor.getDate()+14);
                 }
                 return weeks;
+            }
+
+            function getCurrentBiweeklyIndex() {
+                if (state.weeks.length === 0) {
+                    return -1;
+                }
+
+                const now = new Date();
+                now.setHours(12, 0, 0, 0);
+
+                for (let i = 0; i < state.weeks.length; i++) {
+                    const start = new Date(state.weeks[i].start);
+                    start.setHours(0, 0, 0, 0);
+                    const end = new Date(start);
+                    end.setDate(end.getDate() + 13);
+                    end.setHours(23, 59, 59, 999);
+                    if (now >= start && now <= end) {
+                        return i;
+                    }
+                }
+
+                const firstStart = new Date(state.weeks[0].start);
+                firstStart.setHours(0, 0, 0, 0);
+                if (now < firstStart) {
+                    return 0;
+                }
+
+                return state.weeks.length;
+            }
+
+            function refreshActualSummaryFromRenderedTable() {
+                const totals = new Array(state.weeks.length).fill(0);
+                actualTableBody.querySelectorAll('tr').forEach((row) => {
+                    const rate = parseFloat(row.dataset.rate || '0') || 0;
+                    row.querySelectorAll('.actual-hour-cell').forEach((cell, idx) => {
+                        const input = cell.querySelector('.actual-hour-input');
+                        const hours = input ? (parseFloat(input.value || '0') || 0) : (parseFloat(cell.dataset.hours || '0') || 0);
+                        totals[idx] += hours * rate;
+                    });
+                });
+
+                actualSummaryRow.querySelectorAll('.actual-summary-cell').forEach((cell, idx) => {
+                    cell.textContent = String(Math.round(totals[idx]));
+                });
+                state.actualTotals = totals;
             }
 
             function setStatus(status) {
@@ -282,7 +327,7 @@
 
             function syncActualTable() {
                 actualTableBody.innerHTML = '';
-                const totals = new Array(state.weeks.length).fill(0);
+                const currentBiweeklyIndex = getCurrentBiweeklyIndex();
                 const plannedRows = Array.from(tableBody.querySelectorAll('tr')).map((row) => {
                     const employeeId = String(row.querySelector('.employee-select')?.value || '');
                     const plannedHours = Array.from(row.querySelectorAll('.hour-input')).map((input) => Math.round(parseFloat(input.value || '0') || 0));
@@ -299,22 +344,43 @@
                 rowsForActual.forEach((rowData) => {
                     const employee = getEmployeeMeta(rowData.employeeId);
                     const tr = document.createElement('tr');
+                    tr.dataset.rate = String(employee.rate);
                     tr.innerHTML = `<td>${employee.name}</td><td>${employee.rate}</td>`;
 
                     for (let i = 0; i < state.weeks.length; i++) {
                         const firstWeekHours = Number(state.actualMatrix[rowData.employeeId]?.[i * 2] || 0);
                         const secondWeekHours = Number(state.actualMatrix[rowData.employeeId]?.[(i * 2) + 1] || 0);
-                        const hours = Math.round(firstWeekHours + secondWeekHours);
-                        totals[i] += hours * employee.rate;
+                        const factHours = Math.round(firstWeekHours + secondWeekHours);
+                        const plannedHours = Math.round(Number(rowData.plannedHours[i] || 0));
+                        const isEditable = currentBiweeklyIndex >= 0 && i >= currentBiweeklyIndex && currentBiweeklyIndex < state.weeks.length;
 
-                        const plannedHours = rowData.plannedHours[i] || 0;
                         const td = document.createElement('td');
+                        td.className = 'actual-hour-cell';
                         td.style.minWidth = '9rem';
-                        td.textContent = String(hours);
 
-                        if (hours > plannedHours) {
-                            td.style.color = '#dc3545';
-                            td.style.fontWeight = '700';
+                        if (i === currentBiweeklyIndex) {
+                            td.style.backgroundColor = '#fff3cd';
+                        }
+
+                        if (isEditable) {
+                            if (!state.actualOverrides[rowData.employeeId]) {
+                                state.actualOverrides[rowData.employeeId] = {};
+                            }
+                            const overrideValue = state.actualOverrides[rowData.employeeId][i];
+                            const value = overrideValue ?? plannedHours;
+                            td.dataset.hours = String(value);
+                            td.innerHTML = `<input type="number" min="0" step="0.1" class="form-control actual-hour-input" data-employee-id="${rowData.employeeId}" data-biweekly-index="${i}" value="${value}">`;
+                            if (factHours > plannedHours) {
+                                td.style.color = '#dc3545';
+                                td.style.fontWeight = '700';
+                            }
+                        } else {
+                            td.dataset.hours = String(factHours);
+                            td.textContent = String(factHours);
+                            if (factHours > plannedHours) {
+                                td.style.color = '#dc3545';
+                                td.style.fontWeight = '700';
+                            }
                         }
 
                         tr.appendChild(td);
@@ -323,11 +389,17 @@
                     actualTableBody.appendChild(tr);
                 });
 
-                actualSummaryRow.querySelectorAll('.actual-summary-cell').forEach((cell, idx) => {
-                    cell.textContent = String(Math.round(totals[idx]));
+                actualTableHead.querySelectorAll('th').forEach((cell, idx) => {
+                    const biweeklyIndex = idx - 2;
+                    cell.style.backgroundColor = biweeklyIndex === currentBiweeklyIndex ? '#fff3cd' : '';
                 });
-                state.actualTotals = totals;
-                return totals;
+
+                actualSummaryRow.querySelectorAll('.actual-summary-cell').forEach((cell, idx) => {
+                    cell.style.backgroundColor = idx === currentBiweeklyIndex ? '#fff3cd' : '';
+                });
+
+                refreshActualSummaryFromRenderedTable();
+                return state.actualTotals;
             }
 
             function renderChart() {
@@ -447,9 +519,9 @@
                 const start = state.activeProject?.start ?? '—'; const end = state.activeProject?.end ?? '—';
                 state.activeBudget = Number(state.activeProject?.budget ?? 0);
                 projectStartDateLabel.textContent = start; projectEndDateLabel.textContent = end; projectBudgetLabel.textContent = String(Math.round(state.activeBudget));
-                if (!state.activeProject) { state.status='NEW'; state.actualMatrix={}; renderTableStructure([]); renderChart(); return; }
+                if (!state.activeProject) { state.status='NEW'; state.actualMatrix={}; state.actualOverrides={}; renderTableStructure([]); renderChart(); return; }
                 const [saved, actual] = await Promise.all([loadSavedPlan(state.activeProject.id), loadActualCosts(state.activeProject.id)]);
-                state.status = saved.status; state.actualMatrix = actual;
+                state.status = saved.status; state.actualMatrix = actual; state.actualOverrides = {};
                 renderTableStructure(saved.rows); renderChart();
             }
 
@@ -460,7 +532,28 @@
             document.getElementById('rejectPlanButton').addEventListener('click', function () { if (isAdmin && state.activeProject) savePlan('REJECTED'); });
             projectSelect.addEventListener('change', function () { applyProject(this.value); });
             tableBody.addEventListener('change', function (event) { if (event.target.classList.contains('employee-select')) { updateRowRate(event.target.closest('tr')); calculateSummary(); syncActualTable(); } });
-            tableBody.addEventListener('input', function (event) { if (event.target.classList.contains('hour-input')) calculateSummary(); });
+            tableBody.addEventListener('input', function (event) { if (event.target.classList.contains('hour-input')) { calculateSummary(); syncActualTable(); } });
+            actualTableBody.addEventListener('input', function (event) {
+                if (!event.target.classList.contains('actual-hour-input')) {
+                    return;
+                }
+
+                const employeeId = String(event.target.dataset.employeeId || '');
+                const biweeklyIndex = parseInt(String(event.target.dataset.biweeklyIndex || '-1'), 10);
+                if (!employeeId || Number.isNaN(biweeklyIndex) || biweeklyIndex < 0) {
+                    return;
+                }
+
+                if (!state.actualOverrides[employeeId]) {
+                    state.actualOverrides[employeeId] = {};
+                }
+                state.actualOverrides[employeeId][biweeklyIndex] = parseFloat(event.target.value || '0') || 0;
+                const parentCell = event.target.closest('.actual-hour-cell');
+                if (parentCell) {
+                    parentCell.dataset.hours = String(state.actualOverrides[employeeId][biweeklyIndex]);
+                }
+                refreshActualSummaryFromRenderedTable();
+            });
             tableBody.addEventListener('click', function (event) {
                 if (!event.target.classList.contains('remove-row-button')) {
                     return;
