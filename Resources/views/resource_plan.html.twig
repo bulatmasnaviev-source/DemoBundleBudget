@@ -11,10 +11,22 @@
                 <select id="planningIntervalSelect" class="form-select"></select>
             </div>
 
+            <div class="d-flex flex-wrap gap-2 mb-3">
+                <button id="resourcePlanSendButton" type="button" class="btn btn-secondary">Отправить</button>
+                <button id="resourcePlanEditButton" type="button" class="btn btn-warning">Редактировать</button>
+                <button id="resourcePlanApproveButton" type="button" class="btn btn-success">Согласовать</button>
+            </div>
+
+            <div class="mb-3">
+                <strong>Статус:</strong>
+                <span id="resourcePlanStatusLabel" class="fw-bold">Новое</span>
+            </div>
+
             <div class="table-responsive">
                 <table class="table table-bordered align-middle" id="resourcePlanTable" style="table-layout: fixed; width: 100%;">
                     <thead id="resourcePlanHead"></thead>
                     <tbody id="resourcePlanBody"></tbody>
+                    <tfoot id="resourcePlanFoot"></tfoot>
                 </table>
             </div>
         </div>
@@ -27,21 +39,40 @@
         (function () {
             const employees = {{ employees|json_encode|raw }};
             const activeProjects = {{ active_projects|json_encode|raw }};
+            const getUrlTemplate = '{{ path('demo_resource_plan_get', {'intervalId': 'INTERVAL_ID'}) }}';
+            const statusUrlTemplate = '{{ path('demo_resource_plan_status', {'intervalId': 'INTERVAL_ID'}) }}';
+
+            const STATUS = {
+                NEW: {label: 'Новое', locked: false, color: '#000000'},
+                DISCUSSION: {label: 'К обсуждению', locked: true, color: '#6c757d'},
+                APPROVED: {label: 'Утвержден', locked: true, color: '#198754'},
+                CORRECTING: {label: 'Корректируется', locked: false, color: '#ffc107'},
+            };
 
             const COLUMN_WIDTH = {
                 project: '18rem',
                 employee: '8rem',
+                total: '8rem',
             };
 
             const planningIntervalSelect = document.getElementById('planningIntervalSelect');
             const resourcePlanHead = document.getElementById('resourcePlanHead');
             const resourcePlanBody = document.getElementById('resourcePlanBody');
-            const state = {intervals: [], values: {}};
+            const resourcePlanFoot = document.getElementById('resourcePlanFoot');
+            const statusLabel = document.getElementById('resourcePlanStatusLabel');
+            const sendButton = document.getElementById('resourcePlanSendButton');
+            const editButton = document.getElementById('resourcePlanEditButton');
+            const approveButton = document.getElementById('resourcePlanApproveButton');
+            const state = {intervals: [], cells: {}, status: 'NEW'};
 
             function applyCellWidth(cell, width) {
                 cell.style.width = width;
                 cell.style.minWidth = width;
                 cell.style.maxWidth = width;
+            }
+
+            function getUrl(template, intervalId) {
+                return template.replace('INTERVAL_ID', String(intervalId));
             }
 
             function getMonday(date) {
@@ -95,8 +126,78 @@
                 return `${intervalId}::${projectId}::${employeeId}`;
             }
 
-            function renderIntervals() {
-                planningIntervalSelect.innerHTML = state.intervals.map((interval) => `<option value="${interval.id}">${interval.label}</option>`).join('');
+            function getIntervalId() {
+                return planningIntervalSelect.value;
+            }
+
+            function getCellValue(intervalId, projectId, employeeId) {
+                return state.cells[getCellKey(intervalId, projectId, employeeId)] ?? '';
+            }
+
+            function setStatus(status) {
+                state.status = STATUS[status] ? status : 'NEW';
+                statusLabel.textContent = STATUS[state.status].label;
+                statusLabel.style.color = STATUS[state.status].color;
+                const locked = STATUS[state.status].locked;
+                resourcePlanBody.querySelectorAll('.resource-hour-input').forEach((input) => {
+                    input.disabled = locked;
+                });
+            }
+
+            function calculateColumnTotals(intervalId) {
+                return employees.map((employee) => activeProjects.reduce((sum, project) => {
+                    return sum + (parseFloat(getCellValue(intervalId, project.id, employee.id) || '0') || 0);
+                }, 0));
+            }
+
+            function renderFooter(intervalId) {
+                resourcePlanFoot.innerHTML = '';
+                const totals = calculateColumnTotals(intervalId);
+
+                const summaryRow = document.createElement('tr');
+                const summaryLabel = document.createElement('th');
+                summaryLabel.textContent = 'Сумма';
+                applyCellWidth(summaryLabel, COLUMN_WIDTH.project);
+                summaryRow.appendChild(summaryLabel);
+
+                totals.forEach((total) => {
+                    const cell = document.createElement('td');
+                    applyCellWidth(cell, COLUMN_WIDTH.employee);
+                    cell.textContent = String(Math.round(total * 10) / 10);
+                    summaryRow.appendChild(cell);
+                });
+
+                const summaryEnd = document.createElement('td');
+                applyCellWidth(summaryEnd, COLUMN_WIDTH.total);
+                summaryEnd.textContent = '—';
+                summaryRow.appendChild(summaryEnd);
+                resourcePlanFoot.appendChild(summaryRow);
+
+                const reserveRow = document.createElement('tr');
+                const reserveLabel = document.createElement('th');
+                reserveLabel.textContent = 'Резерв часов';
+                applyCellWidth(reserveLabel, COLUMN_WIDTH.project);
+                reserveRow.appendChild(reserveLabel);
+
+                let reserveTotal = 0;
+                totals.forEach((total) => {
+                    const reserve = Math.round((80 - total) * 10) / 10;
+                    reserveTotal += reserve;
+                    const cell = document.createElement('td');
+                    applyCellWidth(cell, COLUMN_WIDTH.employee);
+                    cell.textContent = String(reserve);
+                    if (reserve <= 5) {
+                        cell.style.color = '#dc3545';
+                        cell.style.fontWeight = '700';
+                    }
+                    reserveRow.appendChild(cell);
+                });
+
+                const reserveEnd = document.createElement('td');
+                applyCellWidth(reserveEnd, COLUMN_WIDTH.total);
+                reserveEnd.textContent = String(Math.round(reserveTotal * 10) / 10);
+                reserveRow.appendChild(reserveEnd);
+                resourcePlanFoot.appendChild(reserveRow);
             }
 
             function renderTable() {
@@ -115,9 +216,14 @@
                     applyCellWidth(th, COLUMN_WIDTH.employee);
                     headerRow.appendChild(th);
                 });
+
+                const totalHeader = document.createElement('th');
+                totalHeader.textContent = 'Итого';
+                applyCellWidth(totalHeader, COLUMN_WIDTH.total);
+                headerRow.appendChild(totalHeader);
                 resourcePlanHead.appendChild(headerRow);
 
-                const intervalId = planningIntervalSelect.value;
+                const intervalId = getIntervalId();
                 activeProjects.forEach((project) => {
                     const tr = document.createElement('tr');
                     const projectCell = document.createElement('td');
@@ -125,38 +231,100 @@
                     applyCellWidth(projectCell, COLUMN_WIDTH.project);
                     tr.appendChild(projectCell);
 
+                    let rowTotal = 0;
                     employees.forEach((employee) => {
                         const td = document.createElement('td');
                         applyCellWidth(td, COLUMN_WIDTH.employee);
-                        const key = getCellKey(intervalId, project.id, employee.id);
-                        const value = state.values[key] ?? '';
+                        const value = getCellValue(intervalId, project.id, employee.id);
+                        rowTotal += parseFloat(value || '0') || 0;
                         td.innerHTML = `<input type="number" min="0" step="0.1" class="form-control resource-hour-input" style="width:100%; box-sizing:border-box;" data-project-id="${project.id}" data-employee-id="${employee.id}" value="${value}">`;
                         tr.appendChild(td);
                     });
 
+                    const totalCell = document.createElement('td');
+                    applyCellWidth(totalCell, COLUMN_WIDTH.total);
+                    totalCell.textContent = String(Math.round(rowTotal * 10) / 10);
+                    tr.appendChild(totalCell);
                     resourcePlanBody.appendChild(tr);
                 });
+
+                renderFooter(intervalId);
+                setStatus(state.status);
             }
 
-            planningIntervalSelect.addEventListener('change', renderTable);
+            function renderIntervals() {
+                planningIntervalSelect.innerHTML = state.intervals.map((interval) => `<option value="${interval.id}">${interval.label}</option>`).join('');
+            }
+
+            async function loadInterval(intervalId) {
+                const response = await fetch(getUrl(getUrlTemplate, intervalId));
+                if (!response.ok) {
+                    state.cells = {};
+                    state.status = 'NEW';
+                    renderTable();
+                    return;
+                }
+
+                const payload = await response.json();
+                state.cells = payload.cells && typeof payload.cells === 'object' ? payload.cells : {};
+                state.status = STATUS[payload.status] ? payload.status : 'NEW';
+                renderTable();
+            }
+
+            async function saveInterval(status) {
+                const intervalId = getIntervalId();
+                const response = await fetch(getUrl(statusUrlTemplate, intervalId), {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({status, cells: state.cells}),
+                });
+                if (!response.ok) {
+                    alert('Не удалось сохранить ресурсный план');
+                    return;
+                }
+
+                const payload = await response.json();
+                state.status = STATUS[payload.status] ? payload.status : status;
+                renderTable();
+            }
+
+            planningIntervalSelect.addEventListener('change', function () {
+                loadInterval(this.value);
+            });
+
             resourcePlanBody.addEventListener('input', function (event) {
                 if (!event.target.classList.contains('resource-hour-input')) {
                     return;
                 }
 
-                const intervalId = planningIntervalSelect.value;
+                const intervalId = getIntervalId();
                 const projectId = String(event.target.dataset.projectId || '');
                 const employeeId = String(event.target.dataset.employeeId || '');
                 const key = getCellKey(intervalId, projectId, employeeId);
-                state.values[key] = event.target.value;
+                state.cells[key] = event.target.value;
+                renderTable();
+            });
+
+            sendButton.addEventListener('click', function () {
+                saveInterval('DISCUSSION');
+            });
+
+            editButton.addEventListener('click', function () {
+                saveInterval('CORRECTING');
+            });
+
+            approveButton.addEventListener('click', function () {
+                saveInterval('APPROVED');
             });
 
             state.intervals = buildBiweeklyIntervals(new Date().getFullYear());
             renderIntervals();
             if (state.intervals.length > 0) {
                 planningIntervalSelect.value = state.intervals[0].id;
+                loadInterval(state.intervals[0].id);
+            } else {
+                renderTable();
             }
-            renderTable();
         })();
     </script>
 {% endblock %}

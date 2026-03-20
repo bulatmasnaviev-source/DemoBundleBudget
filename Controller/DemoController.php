@@ -23,6 +23,7 @@ use KimaiPlugin\DemoBundle\Report\DemoReportForm;
 use KimaiPlugin\DemoBundle\Report\DemoReportQuery;
 use KimaiPlugin\DemoBundle\Repository\BudgetPlanStorage;
 use KimaiPlugin\DemoBundle\Repository\DemoRepository;
+use KimaiPlugin\DemoBundle\Repository\ResourcePlanStorage;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -33,7 +34,7 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 #[IsGranted('demo')]
 final class DemoController extends AbstractController
 {
-    public function __construct(private DemoRepository $repository, private DemoConfiguration $configuration, private EntityManagerInterface $entityManager, private BudgetPlanStorage $budgetPlanStorage)
+    public function __construct(private DemoRepository $repository, private DemoConfiguration $configuration, private EntityManagerInterface $entityManager, private BudgetPlanStorage $budgetPlanStorage, private ResourcePlanStorage $resourcePlanStorage)
     {
     }
 
@@ -196,6 +197,34 @@ final class DemoController extends AbstractController
     }
 
 
+
+    #[Route(path: '/resource-plan/{intervalId}', name: 'demo_resource_plan_get', methods: ['GET'])]
+    public function getResourcePlan(string $intervalId): JsonResponse
+    {
+        $data = $this->resourcePlanStorage->loadByIntervalId($intervalId);
+
+        if ($data === null) {
+            return new JsonResponse(['status' => 'NEW', 'cells' => []]);
+        }
+
+        return new JsonResponse([
+            'status' => $this->normalizeResourcePlanStatus((string) ($data['status'] ?? 'NEW')),
+            'cells' => \is_array($data['cells'] ?? null) ? $data['cells'] : [],
+        ]);
+    }
+
+    #[Route(path: '/resource-plan/{intervalId}/status', name: 'demo_resource_plan_status', methods: ['POST'])]
+    public function setResourcePlanStatus(Request $request, string $intervalId): JsonResponse
+    {
+        $payload = json_decode($request->getContent(), true);
+        $status = $this->normalizeResourcePlanStatus($payload['status'] ?? 'NEW');
+        $cells = \is_array($payload['cells'] ?? null) ? $payload['cells'] : [];
+
+        $this->resourcePlanStorage->saveByIntervalId($intervalId, $status, $cells);
+
+        return new JsonResponse(['status' => $status, 'cells' => $cells]);
+    }
+
     #[Route(path: '/budget-plan/{project}', name: 'demo_budget_plan_get', methods: ['GET'])]
     public function getBudgetPlan(Project $project): JsonResponse
     {
@@ -233,6 +262,14 @@ final class DemoController extends AbstractController
     {
         return match ($status) {
             'SENT', 'APPROVED', 'REJECTED' => $status,
+            default => 'NEW',
+        };
+    }
+
+    private function normalizeResourcePlanStatus(string $status): string
+    {
+        return match ($status) {
+            'DISCUSSION', 'APPROVED', 'CORRECTING' => $status,
             default => 'NEW',
         };
     }
