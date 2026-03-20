@@ -102,6 +102,42 @@ final class DemoController extends AbstractController
             ];
         }
 
+        $employees = $this->buildEmployeeData();
+
+        return $this->render('@Demo/index.html.twig', [
+            'page_setup' => $page,
+            'entity' => $entity,
+            'configuration' => $this->configuration,
+            'projects' => $projects,
+            'project_data' => $projectData,
+            'employees' => $employees,
+            'active_project_statuses' => $activeProjectStatuses,
+            'is_admin' => $this->isGranted('ROLE_ADMIN'),
+            // for locale testing
+            'now' => new \DateTime(),
+            'timesheet' => $timesheet,
+            'locales' => $localeService->getAllLocales(),
+            // TODO - unused
+            'form' => $form->createView(),
+        ]);
+    }
+
+
+    #[Route(path: '/resource-plan', name: 'demo_resource_plan', methods: ['GET'])]
+    public function resourcePlan(): Response
+    {
+        $page = new PageSetup('Ресурсный план');
+        $page->setActionName('demo_resource_plan');
+
+        return $this->render('@Demo/resource_plan.html.twig', [
+            'page_setup' => $page,
+            'employees' => $this->buildEmployeeData(),
+            'active_projects' => $this->buildActiveProjects(),
+        ]);
+    }
+
+    private function buildEmployeeData(): array
+    {
         $users = $this->entityManager->getRepository(User::class)->findBy([], ['alias' => 'ASC']);
         $employees = [];
         foreach ($users as $user) {
@@ -129,22 +165,34 @@ final class DemoController extends AbstractController
             ];
         }
 
-        return $this->render('@Demo/index.html.twig', [
-            'page_setup' => $page,
-            'entity' => $entity,
-            'configuration' => $this->configuration,
-            'projects' => $projects,
-            'project_data' => $projectData,
-            'employees' => $employees,
-            'active_project_statuses' => $activeProjectStatuses,
-            'is_admin' => $this->isGranted('ROLE_ADMIN'),
-            // for locale testing
-            'now' => new \DateTime(),
-            'timesheet' => $timesheet,
-            'locales' => $localeService->getAllLocales(),
-            // TODO - unused
-            'form' => $form->createView(),
-        ]);
+        return $employees;
+    }
+
+    private function buildActiveProjects(): array
+    {
+        $projects = $this->entityManager->getRepository(Project::class)->findAll();
+        usort($projects, static fn (Project $a, Project $b) => strcasecmp($a->getName(), $b->getName()));
+
+        $activeProjects = [];
+        foreach ($projects as $project) {
+            $isVisible = true;
+            if (method_exists($project, 'isVisible')) {
+                $isVisible = (bool) $project->isVisible();
+            } elseif (method_exists($project, 'getVisible')) {
+                $isVisible = (bool) $project->getVisible();
+            }
+
+            if (!$isVisible) {
+                continue;
+            }
+
+            $activeProjects[] = [
+                'id' => $project->getId(),
+                'name' => $project->getName(),
+            ];
+        }
+
+        return $activeProjects;
     }
 
 

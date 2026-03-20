@@ -1,0 +1,162 @@
+{% extends 'base.html.twig' %}
+
+{% block main %}
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Ресурсное планирование</h3>
+        </div>
+        <div class="card-body">
+            <div class="mb-3" style="max-width: 28rem;">
+                <label class="form-label" for="planningIntervalSelect">Выбор интервала планирования</label>
+                <select id="planningIntervalSelect" class="form-select"></select>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-bordered align-middle" id="resourcePlanTable" style="table-layout: fixed; width: 100%;">
+                    <thead id="resourcePlanHead"></thead>
+                    <tbody id="resourcePlanBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block javascripts %}
+    {{ parent() }}
+    <script>
+        (function () {
+            const employees = {{ employees|json_encode|raw }};
+            const activeProjects = {{ active_projects|json_encode|raw }};
+
+            const COLUMN_WIDTH = {
+                project: '18rem',
+                employee: '8rem',
+            };
+
+            const planningIntervalSelect = document.getElementById('planningIntervalSelect');
+            const resourcePlanHead = document.getElementById('resourcePlanHead');
+            const resourcePlanBody = document.getElementById('resourcePlanBody');
+            const state = {intervals: [], values: {}};
+
+            function applyCellWidth(cell, width) {
+                cell.style.width = width;
+                cell.style.minWidth = width;
+                cell.style.maxWidth = width;
+            }
+
+            function getMonday(date) {
+                const result = new Date(date);
+                const day = result.getDay();
+                result.setDate(result.getDate() + (day === 0 ? -6 : 1 - day));
+                result.setHours(0, 0, 0, 0);
+                return result;
+            }
+
+            function formatShortDate(date) {
+                const day = String(date.getDate()).padStart(2, '0');
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                return `${day}.${month}`;
+            }
+
+            function formatEmployeeHeader(name) {
+                const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+                if (parts.length >= 2) {
+                    const lastName = parts[0];
+                    const firstName = parts[1];
+                    return `${firstName} ${lastName.charAt(0)}.`;
+                }
+
+                return String(name || 'Сотрудник');
+            }
+
+            function buildBiweeklyIntervals(year) {
+                const januaryFirst = new Date(year, 0, 1);
+                const start = getMonday(januaryFirst);
+                const endOfYear = new Date(year, 11, 31, 23, 59, 59, 999);
+                const intervals = [];
+                const cursor = new Date(start);
+
+                while (cursor <= endOfYear) {
+                    const intervalStart = new Date(cursor);
+                    const intervalEnd = new Date(cursor);
+                    intervalEnd.setDate(intervalEnd.getDate() + 13);
+                    intervalEnd.setHours(23, 59, 59, 999);
+                    intervals.push({
+                        id: intervalStart.toISOString().slice(0, 10),
+                        label: `${formatShortDate(intervalStart)}-${formatShortDate(intervalEnd)}`,
+                    });
+                    cursor.setDate(cursor.getDate() + 14);
+                }
+
+                return intervals;
+            }
+
+            function getCellKey(intervalId, projectId, employeeId) {
+                return `${intervalId}::${projectId}::${employeeId}`;
+            }
+
+            function renderIntervals() {
+                planningIntervalSelect.innerHTML = state.intervals.map((interval) => `<option value="${interval.id}">${interval.label}</option>`).join('');
+            }
+
+            function renderTable() {
+                resourcePlanHead.innerHTML = '';
+                resourcePlanBody.innerHTML = '';
+
+                const headerRow = document.createElement('tr');
+                const projectHeader = document.createElement('th');
+                projectHeader.textContent = 'Проект';
+                applyCellWidth(projectHeader, COLUMN_WIDTH.project);
+                headerRow.appendChild(projectHeader);
+
+                employees.forEach((employee) => {
+                    const th = document.createElement('th');
+                    th.textContent = formatEmployeeHeader(employee.name);
+                    applyCellWidth(th, COLUMN_WIDTH.employee);
+                    headerRow.appendChild(th);
+                });
+                resourcePlanHead.appendChild(headerRow);
+
+                const intervalId = planningIntervalSelect.value;
+                activeProjects.forEach((project) => {
+                    const tr = document.createElement('tr');
+                    const projectCell = document.createElement('td');
+                    projectCell.textContent = project.name;
+                    applyCellWidth(projectCell, COLUMN_WIDTH.project);
+                    tr.appendChild(projectCell);
+
+                    employees.forEach((employee) => {
+                        const td = document.createElement('td');
+                        applyCellWidth(td, COLUMN_WIDTH.employee);
+                        const key = getCellKey(intervalId, project.id, employee.id);
+                        const value = state.values[key] ?? '';
+                        td.innerHTML = `<input type="number" min="0" step="0.1" class="form-control resource-hour-input" style="width:100%; box-sizing:border-box;" data-project-id="${project.id}" data-employee-id="${employee.id}" value="${value}">`;
+                        tr.appendChild(td);
+                    });
+
+                    resourcePlanBody.appendChild(tr);
+                });
+            }
+
+            planningIntervalSelect.addEventListener('change', renderTable);
+            resourcePlanBody.addEventListener('input', function (event) {
+                if (!event.target.classList.contains('resource-hour-input')) {
+                    return;
+                }
+
+                const intervalId = planningIntervalSelect.value;
+                const projectId = String(event.target.dataset.projectId || '');
+                const employeeId = String(event.target.dataset.employeeId || '');
+                const key = getCellKey(intervalId, projectId, employeeId);
+                state.values[key] = event.target.value;
+            });
+
+            state.intervals = buildBiweeklyIntervals(new Date().getFullYear());
+            renderIntervals();
+            if (state.intervals.length > 0) {
+                planningIntervalSelect.value = state.intervals[0].id;
+            }
+            renderTable();
+        })();
+    </script>
+{% endblock %}

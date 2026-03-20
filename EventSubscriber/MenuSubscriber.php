@@ -37,8 +37,12 @@ final class MenuSubscriber implements EventSubscriberInterface
         }
 
         if ($auth->isGranted('demo')) {
-            $event->getMenu()->addChild(
+            $menu = $event->getMenu();
+            $menu->addChild(
                 new MenuItemModel('demo', 'Менеджмент затрат', 'demo', [], 'fas fa-snowman')
+            );
+            $menu->addChild(
+                new MenuItemModel('demo_resource_plan', 'Ресурсный план', 'demo_resource_plan', [], 'fas fa-calendar-alt')
             );
         }
     }
