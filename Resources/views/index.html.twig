@@ -72,7 +72,7 @@
             </div>
 
             <div class="table-responsive">
-                <table class="table table-bordered align-middle" id="budgetTable" style="table-layout: fixed; width: auto;">
+                <table class="table table-bordered align-middle" id="budgetTable" style="table-layout: fixed; width: 100%;">
                     <thead id="budgetTableHead"></thead>
                     <tbody id="budgetTableBody"></tbody>
                     <tfoot><tr id="summaryRow"><th colspan="3">Сумма (ставка × часы)</th></tr></tfoot>
@@ -85,7 +85,7 @@
             </div>
 
             <div class="table-responsive mt-3">
-                <table class="table table-bordered align-middle" id="actualTable" style="table-layout: fixed; width: auto;">
+                <table class="table table-bordered align-middle" id="actualTable" style="table-layout: fixed; width: 100%;">
                     <thead id="actualTableHead"></thead>
                     <tbody id="actualTableBody"></tbody>
                     <tfoot><tr id="actualSummaryRow"><th colspan="2">Факт (таймшиты, часы × ставка)</th></tr></tfoot>
@@ -141,6 +141,19 @@
             const actualTableHead = document.getElementById('actualTableHead');
             const actualTableBody = document.getElementById('actualTableBody');
             const actualSummaryRow = document.getElementById('actualSummaryRow');
+
+            const COLUMN_WIDTH = {
+                employee: '16rem',
+                rate: '8rem',
+                actions: '6rem',
+                period: '9rem',
+            };
+
+            function applyCellWidth(cell, width) {
+                cell.style.width = width;
+                cell.style.minWidth = width;
+                cell.style.maxWidth = width;
+            }
 
             function getPlanUrl(template, projectId) { return template.replace('PROJECT_ID', String(projectId)); }
             function getMonday(date) { const r = new Date(date); const d=r.getDay(); r.setDate(r.getDate() + (d===0?-6:1-d)); r.setHours(0,0,0,0); return r; }
@@ -262,14 +275,15 @@
 
             function createRow(initialEmployeeId = null, hourValues = []) {
                 const tr = document.createElement('tr'); tr.dataset.rate = '0';
-                const employeeCell = document.createElement('td'); employeeCell.innerHTML = `<select class="form-select employee-select">${createEmployeeOptions()}</select>`;
-                const rateCell = document.createElement('td'); rateCell.innerHTML = '<span class="rate-label">0</span>';
+                const employeeCell = document.createElement('td'); employeeCell.innerHTML = `<select class="form-select employee-select">${createEmployeeOptions()}</select>`; applyCellWidth(employeeCell, COLUMN_WIDTH.employee);
+                const rateCell = document.createElement('td'); rateCell.innerHTML = '<span class="rate-label">0</span>'; applyCellWidth(rateCell, COLUMN_WIDTH.rate);
                 const actionsCell = document.createElement('td');
                 actionsCell.innerHTML = '<button type="button" class="btn btn-sm btn-danger remove-row-button" title="Удалить строку">✕</button>';
+                applyCellWidth(actionsCell, COLUMN_WIDTH.actions);
                 tr.appendChild(employeeCell); tr.appendChild(rateCell); tr.appendChild(actionsCell);
                 for (let i=0;i<state.weeks.length;i++) {
                     const hourCell = document.createElement('td');
-                    hourCell.style.minWidth = '9rem';
+                    applyCellWidth(hourCell, COLUMN_WIDTH.period);
                     hourCell.innerHTML = `<input type="number" min="0" step="0.1" class="form-control hour-input" style="min-width: 9rem;" value="${hourValues[i] ?? '0'}">`;
                     tr.appendChild(hourCell);
                 }
@@ -291,12 +305,17 @@
                 tableHead.innerHTML = ''; summaryRow.querySelectorAll('td').forEach((c) => c.remove());
                 actualTableHead.innerHTML = ''; actualSummaryRow.querySelectorAll('td').forEach((c) => c.remove());
                 const hr = document.createElement('tr'); hr.innerHTML = '<th>ФИО сотрудника</th><th>Часовая ставка</th><th>Действия</th>';
+                applyCellWidth(hr.children[0], COLUMN_WIDTH.employee);
+                applyCellWidth(hr.children[1], COLUMN_WIDTH.rate);
+                applyCellWidth(hr.children[2], COLUMN_WIDTH.actions);
                 const hr2 = document.createElement('tr'); hr2.innerHTML = '<th>ФИО сотрудника</th><th>Часовая ставка</th>';
+                applyCellWidth(hr2.children[0], COLUMN_WIDTH.employee);
+                applyCellWidth(hr2.children[1], COLUMN_WIDTH.rate);
                 state.weeks.forEach((week) => {
-                    const th = document.createElement('th'); th.textContent = week.label; th.style.whiteSpace = 'pre-line'; th.style.minWidth = '9rem'; hr.appendChild(th);
-                    const s = document.createElement('td'); s.className = 'summary-cell'; s.style.minWidth = '9rem'; s.textContent = '0'; summaryRow.appendChild(s);
-                    const th2 = document.createElement('th'); th2.textContent = week.label; th2.style.whiteSpace = 'pre-line'; th2.style.minWidth = '9rem'; hr2.appendChild(th2);
-                    const s2 = document.createElement('td'); s2.className = 'actual-summary-cell'; s2.style.minWidth = '9rem'; s2.textContent = '0'; actualSummaryRow.appendChild(s2);
+                    const th = document.createElement('th'); th.textContent = week.label; th.style.whiteSpace = 'pre-line'; applyCellWidth(th, COLUMN_WIDTH.period); hr.appendChild(th);
+                    const s = document.createElement('td'); s.className = 'summary-cell'; applyCellWidth(s, COLUMN_WIDTH.period); s.textContent = '0'; summaryRow.appendChild(s);
+                    const th2 = document.createElement('th'); th2.textContent = week.label; th2.style.whiteSpace = 'pre-line'; applyCellWidth(th2, COLUMN_WIDTH.period); hr2.appendChild(th2);
+                    const s2 = document.createElement('td'); s2.className = 'actual-summary-cell'; applyCellWidth(s2, COLUMN_WIDTH.period); s2.textContent = '0'; actualSummaryRow.appendChild(s2);
                 });
                 tableHead.appendChild(hr); actualTableHead.appendChild(hr2);
             }
@@ -346,6 +365,8 @@
                     const tr = document.createElement('tr');
                     tr.dataset.rate = String(employee.rate);
                     tr.innerHTML = `<td>${employee.name}</td><td>${employee.rate}</td>`;
+                    applyCellWidth(tr.children[0], COLUMN_WIDTH.employee);
+                    applyCellWidth(tr.children[1], COLUMN_WIDTH.rate);
 
                     for (let i = 0; i < state.weeks.length; i++) {
                         const firstWeekHours = Number(state.actualMatrix[rowData.employeeId]?.[i * 2] || 0);
@@ -356,7 +377,7 @@
 
                         const td = document.createElement('td');
                         td.className = 'actual-hour-cell';
-                        td.style.minWidth = '9rem';
+                        applyCellWidth(td, COLUMN_WIDTH.period);
 
                         if (i === currentBiweeklyIndex) {
                             td.style.backgroundColor = '#fff3cd';
@@ -369,7 +390,7 @@
                             const overrideValue = state.actualOverrides[rowData.employeeId][i];
                             const value = overrideValue ?? plannedHours;
                             td.dataset.hours = String(value);
-                            td.innerHTML = `<input type="number" min="0" step="0.1" class="form-control actual-hour-input" data-employee-id="${rowData.employeeId}" data-biweekly-index="${i}" value="${value}">`;
+                            td.innerHTML = `<input type="number" min="0" step="0.1" class="form-control actual-hour-input" style="width:100%; box-sizing:border-box;" data-employee-id="${rowData.employeeId}" data-biweekly-index="${i}" value="${value}">`;
                             if (factHours > plannedHours) {
                                 td.style.color = '#dc3545';
                                 td.style.fontWeight = '700';
