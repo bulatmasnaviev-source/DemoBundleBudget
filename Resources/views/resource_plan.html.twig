@@ -200,6 +200,22 @@
                 resourcePlanFoot.appendChild(reserveRow);
             }
 
+            function updateRowTotal(row) {
+                if (!(row instanceof HTMLTableRowElement)) {
+                    return;
+                }
+
+                let rowTotal = 0;
+                row.querySelectorAll('.resource-hour-input').forEach((input) => {
+                    rowTotal += parseFloat(input.value || '0') || 0;
+                });
+
+                const totalCell = row.lastElementChild;
+                if (totalCell instanceof HTMLElement) {
+                    totalCell.textContent = String(Math.round(rowTotal * 10) / 10);
+                }
+            }
+
             function renderTable() {
                 resourcePlanHead.innerHTML = '';
                 resourcePlanBody.innerHTML = '';
@@ -302,7 +318,8 @@
                 const employeeId = String(event.target.dataset.employeeId || '');
                 const key = getCellKey(intervalId, projectId, employeeId);
                 state.cells[key] = event.target.value;
-                renderTable();
+                updateRowTotal(event.target.closest('tr'));
+                renderFooter(intervalId);
             });
 
             sendButton.addEventListener('click', function () {
