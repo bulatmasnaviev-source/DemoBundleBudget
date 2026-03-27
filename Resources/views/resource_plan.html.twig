@@ -63,7 +63,7 @@
             const sendButton = document.getElementById('resourcePlanSendButton');
             const editButton = document.getElementById('resourcePlanEditButton');
             const approveButton = document.getElementById('resourcePlanApproveButton');
-            const state = {intervals: [], cells: {}, status: 'NEW'};
+            const state = {intervals: [], cells: {}, status: 'NEW', dirty: false, saveTimer: null, savePromise: null};
 
             function applyCellWidth(cell, width) {
                 cell.style.width = width;
@@ -216,6 +216,65 @@
                 }
             }
 
+            async function persistInterval(intervalId, status, cells, rerenderOnSuccess = false) {
+                const response = await fetch(getUrl(statusUrlTemplate, intervalId), {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({status, cells}),
+                });
+                if (!response.ok) {
+                    throw new Error('Failed to save resource plan');
+                }
+
+                const payload = await response.json();
+                state.status = STATUS[payload.status] ? payload.status : status;
+                state.dirty = false;
+
+                if (rerenderOnSuccess) {
+                    renderTable();
+                } else {
+                    setStatus(state.status);
+                }
+
+                return payload;
+            }
+
+            function scheduleAutosave() {
+                if (state.saveTimer !== null) {
+                    clearTimeout(state.saveTimer);
+                }
+
+                state.saveTimer = window.setTimeout(() => {
+                    state.saveTimer = null;
+                    state.savePromise = persistInterval(getIntervalId(), state.status, {...state.cells}, false)
+                        .catch(() => {
+                            state.dirty = true;
+                        })
+                        .finally(() => {
+                            state.savePromise = null;
+                        });
+                }, 400);
+            }
+
+            async function flushAutosave() {
+                if (state.saveTimer !== null) {
+                    clearTimeout(state.saveTimer);
+                    state.saveTimer = null;
+                    state.savePromise = persistInterval(getIntervalId(), state.status, {...state.cells}, false)
+                        .catch((error) => {
+                            state.dirty = true;
+                            throw error;
+                        })
+                        .finally(() => {
+                            state.savePromise = null;
+                        });
+                }
+
+                if (state.savePromise) {
+                    await state.savePromise;
+                }
+            }
+
             function renderTable() {
                 resourcePlanHead.innerHTML = '';
                 resourcePlanBody.innerHTML = '';
@@ -277,6 +336,7 @@
                 if (!response.ok) {
                     state.cells = {};
                     state.status = 'NEW';
+                    state.dirty = false;
                     renderTable();
                     return;
                 }
@@ -284,6 +344,7 @@
                 const payload = await response.json();
                 state.cells = payload.cells && typeof payload.cells === 'object' ? payload.cells : {};
                 state.status = STATUS[payload.status] ? payload.status : 'NEW';
+                state.dirty = false;
                 renderTable();
             }
 
@@ -304,7 +365,22 @@
                 renderTable();
             }
 
-            planningIntervalSelect.addEventListener('change', function () {
+            saveInterval = async function (status) {
+                const intervalId = getIntervalId();
+                try {
+                    await persistInterval(intervalId, status, {...state.cells}, true);
+                } catch (_error) {
+                    alert('Не удалось сохранить ресурсный план');
+                }
+            };
+
+            planningIntervalSelect.addEventListener('change', async function () {
+                try {
+                    await flushAutosave();
+                } catch (_error) {
+                    alert('Не удалось автоматически сохранить текущий интервал.');
+                }
+
                 loadInterval(this.value);
             });
 
@@ -318,8 +394,10 @@
                 const employeeId = String(event.target.dataset.employeeId || '');
                 const key = getCellKey(intervalId, projectId, employeeId);
                 state.cells[key] = event.target.value;
+                state.dirty = true;
                 updateRowTotal(event.target.closest('tr'));
                 renderFooter(intervalId);
+                scheduleAutosave();
             });
 
             sendButton.addEventListener('click', function () {
