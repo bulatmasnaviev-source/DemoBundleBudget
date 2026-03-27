@@ -373,22 +373,6 @@
                 return totals;
             }
 
-            function preserveFocusWhile(updateFn) {
-                const activeElement = document.activeElement;
-
-                updateFn();
-
-                if (!(activeElement instanceof HTMLElement) || !activeElement.isConnected) {
-                    return;
-                }
-
-                requestAnimationFrame(() => {
-                    if (activeElement.isConnected) {
-                        activeElement.focus({preventScroll: true});
-                    }
-                });
-            }
-
             function syncActualTable() {
                 actualTableBody.innerHTML = '';
                 const currentBiweeklyIndex = getCurrentBiweeklyIndex();
@@ -612,16 +596,25 @@
             document.getElementById('approvePlanButton').addEventListener('click', function () { if (isAdmin && state.activeProject) savePlan('APPROVED'); });
             document.getElementById('rejectPlanButton').addEventListener('click', function () { if (isAdmin && state.activeProject) savePlan('REJECTED'); });
             projectSelect.addEventListener('change', function () { applyProject(this.value); });
-            tableBody.addEventListener('change', function (event) { if (event.target.classList.contains('employee-select')) { updateRowRate(event.target.closest('tr')); calculateSummary(); syncActualTable(); } });
+            tableBody.addEventListener('change', function (event) {
+                if (event.target.classList.contains('employee-select')) {
+                    updateRowRate(event.target.closest('tr'));
+                    calculateSummary();
+                    syncActualTable();
+                    return;
+                }
+
+                if (event.target.classList.contains('hour-input')) {
+                    calculateSummary();
+                    syncActualTable();
+                }
+            });
             tableBody.addEventListener('input', function (event) {
                 if (!event.target.classList.contains('hour-input')) {
                     return;
                 }
 
-                preserveFocusWhile(() => {
-                    calculateSummary();
-                    syncActualTable();
-                });
+                calculateSummary();
             });
             actualTableBody.addEventListener('input', function (event) {
                 if (!event.target.classList.contains('actual-hour-input')) {
