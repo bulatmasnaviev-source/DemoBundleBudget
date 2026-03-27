@@ -124,7 +124,7 @@
                 REJECTED: {label: 'Отклонено', color: '#ffc107', locked: false}
             };
 
-            const state = {weeks: [], activeProject: null, activeBudget: 0, status: 'NEW', actualMatrix: {}, actualTotals: [], actualOverrides: {}};
+            const state = {weeks: [], activeProject: null, activeBudget: 0, status: 'NEW', actualWeeks: [], actualMatrix: {}, actualTotals: [], actualOverrides: {}};
             const employeeMap = new Map(employees.map((employee) => [String(employee.id), employee]));
 
             const projectSelect = document.getElementById('projectSelect');
@@ -160,8 +160,26 @@
             }
 
             function getPlanUrl(template, projectId) { return template.replace('PROJECT_ID', String(projectId)); }
+            function parseLocalDate(value) {
+                if (typeof value !== 'string') {
+                    return null;
+                }
+
+                const parts = value.split('-').map((part) => parseInt(part, 10));
+                if (parts.length !== 3 || parts.some((part) => Number.isNaN(part))) {
+                    return null;
+                }
+
+                return new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0, 0);
+            }
             function getMonday(date) { const r = new Date(date); const d=r.getDay(); r.setDate(r.getDate() + (d===0?-6:1-d)); r.setHours(0,0,0,0); return r; }
             function getSunday(date) { const s = getMonday(date); s.setDate(s.getDate()+6); s.setHours(23,59,59,999); return s; }
+            function formatDateKey(date) {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
             function formatShortDate(date) {
                 const day = String(date.getDate()).padStart(2, '0');
                 const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -175,14 +193,15 @@
 
             function buildWeeks() {
                 if (!state.activeProject || !state.activeProject.start || !state.activeProject.end) return [];
-                const startDate = new Date(state.activeProject.start); const endDate = new Date(state.activeProject.end);
+                const startDate = parseLocalDate(state.activeProject.start); const endDate = parseLocalDate(state.activeProject.end);
+                if (!(startDate instanceof Date) || !(endDate instanceof Date)) return [];
                 if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || startDate > endDate) return [];
                 const periodStart = getMonday(startDate); periodStart.setDate(periodStart.getDate() - 14);
                 const periodEnd = getSunday(endDate); periodEnd.setDate(periodEnd.getDate() + 14);
                 const weeks = []; const cursor = new Date(periodStart);
                 while (cursor <= periodEnd) {
                     const intervalStart = new Date(cursor);
-                    weeks.push({label:getTwoWeekLabel(intervalStart), start: intervalStart.toISOString().slice(0,10)});
+                    weeks.push({label:getTwoWeekLabel(intervalStart), start: formatDateKey(intervalStart)});
                     cursor.setDate(cursor.getDate()+14);
                 }
                 return weeks;
@@ -197,7 +216,10 @@
                 now.setHours(12, 0, 0, 0);
 
                 for (let i = 0; i < state.weeks.length; i++) {
-                    const start = new Date(state.weeks[i].start);
+                    const start = parseLocalDate(state.weeks[i].start);
+                    if (!(start instanceof Date)) {
+                        continue;
+                    }
                     start.setHours(0, 0, 0, 0);
                     const end = new Date(start);
                     end.setDate(end.getDate() + 13);
@@ -207,7 +229,10 @@
                     }
                 }
 
-                const firstStart = new Date(state.weeks[0].start);
+                const firstStart = parseLocalDate(state.weeks[0].start);
+                if (!(firstStart instanceof Date)) {
+                    return -1;
+                }
                 firstStart.setHours(0, 0, 0, 0);
                 if (now < firstStart) {
                     return 0;
@@ -348,9 +373,26 @@
                 return totals;
             }
 
+            function preserveFocusWhile(updateFn) {
+                const activeElement = document.activeElement;
+
+                updateFn();
+
+                if (!(activeElement instanceof HTMLElement) || !activeElement.isConnected) {
+                    return;
+                }
+
+                requestAnimationFrame(() => {
+                    if (activeElement.isConnected) {
+                        activeElement.focus({preventScroll: true});
+                    }
+                });
+            }
+
             function syncActualTable() {
                 actualTableBody.innerHTML = '';
                 const currentBiweeklyIndex = getCurrentBiweeklyIndex();
+                const actualWeekIndexByStart = new Map((state.actualWeeks || []).map((week, index) => [String(week.start || ''), index]));
                 const plannedRows = Array.from(tableBody.querySelectorAll('tr')).map((row) => {
                     const employeeId = String(row.querySelector('.employee-select')?.value || '');
                     const plannedHours = Array.from(row.querySelectorAll('.hour-input')).map((input) => Math.round(parseFloat(input.value || '0') || 0));
@@ -373,9 +415,20 @@
                     applyCellWidth(tr.children[1], COLUMN_WIDTH.rate);
 
                     for (let i = 0; i < state.weeks.length; i++) {
-                        const firstWeekHours = Number(state.actualMatrix[rowData.employeeId]?.[i * 2] || 0);
-                        const secondWeekHours = Number(state.actualMatrix[rowData.employeeId]?.[(i * 2) + 1] || 0);
-                        const factHours = Math.round(firstWeekHours + secondWeekHours);
+                        const intervalStart = parseLocalDate(state.weeks[i].start);
+                        let factHours = 0;
+
+                        if (intervalStart instanceof Date) {
+                            const firstWeekStart = getMonday(intervalStart);
+                            const secondWeekStart = new Date(firstWeekStart);
+                            secondWeekStart.setDate(secondWeekStart.getDate() + 7);
+
+                            const firstWeekIndex = actualWeekIndexByStart.get(formatDateKey(firstWeekStart));
+                            const secondWeekIndex = actualWeekIndexByStart.get(formatDateKey(secondWeekStart));
+                            const firstWeekHours = Number(state.actualMatrix[rowData.employeeId]?.[firstWeekIndex ?? -1] || 0);
+                            const secondWeekHours = Number(state.actualMatrix[rowData.employeeId]?.[secondWeekIndex ?? -1] || 0);
+                            factHours = Math.round(firstWeekHours + secondWeekHours);
+                        }
                         const plannedHours = Math.round(Number(rowData.plannedHours[i] || 0));
                         const isEditable = currentBiweeklyIndex >= 0 && i >= currentBiweeklyIndex && currentBiweeklyIndex < state.weeks.length;
 
@@ -527,9 +580,12 @@
 
             async function loadActualCosts(projectId) {
                 const r = await fetch(getPlanUrl(actualCostsUrlTemplate, projectId));
-                if (!r.ok) return {};
+                if (!r.ok) return {weeks: [], matrix: {}};
                 const payload = await r.json();
-                return payload.matrix && typeof payload.matrix === 'object' ? payload.matrix : {};
+                return {
+                    weeks: Array.isArray(payload.weeks) ? payload.weeks : [],
+                    matrix: payload.matrix && typeof payload.matrix === 'object' ? payload.matrix : {},
+                };
             }
 
             async function savePlan(status) {
@@ -544,9 +600,9 @@
                 const start = state.activeProject?.start ?? '—'; const end = state.activeProject?.end ?? '—';
                 state.activeBudget = Number(state.activeProject?.budget ?? 0);
                 projectStartDateLabel.textContent = start; projectEndDateLabel.textContent = end; projectBudgetLabel.textContent = String(Math.round(state.activeBudget));
-                if (!state.activeProject) { state.status='NEW'; state.actualMatrix={}; state.actualOverrides={}; renderTableStructure([]); renderChart(); return; }
+                if (!state.activeProject) { state.status='NEW'; state.actualWeeks=[]; state.actualMatrix={}; state.actualOverrides={}; renderTableStructure([]); renderChart(); return; }
                 const [saved, actual] = await Promise.all([loadSavedPlan(state.activeProject.id), loadActualCosts(state.activeProject.id)]);
-                state.status = saved.status; state.actualMatrix = actual; state.actualOverrides = {};
+                state.status = saved.status; state.actualWeeks = actual.weeks; state.actualMatrix = actual.matrix; state.actualOverrides = {};
                 renderTableStructure(saved.rows); renderChart();
             }
 
@@ -557,7 +613,16 @@
             document.getElementById('rejectPlanButton').addEventListener('click', function () { if (isAdmin && state.activeProject) savePlan('REJECTED'); });
             projectSelect.addEventListener('change', function () { applyProject(this.value); });
             tableBody.addEventListener('change', function (event) { if (event.target.classList.contains('employee-select')) { updateRowRate(event.target.closest('tr')); calculateSummary(); syncActualTable(); } });
-            tableBody.addEventListener('input', function (event) { if (event.target.classList.contains('hour-input')) { calculateSummary(); syncActualTable(); } });
+            tableBody.addEventListener('input', function (event) {
+                if (!event.target.classList.contains('hour-input')) {
+                    return;
+                }
+
+                preserveFocusWhile(() => {
+                    calculateSummary();
+                    syncActualTable();
+                });
+            });
             actualTableBody.addEventListener('input', function (event) {
                 if (!event.target.classList.contains('actual-hour-input')) {
                     return;
