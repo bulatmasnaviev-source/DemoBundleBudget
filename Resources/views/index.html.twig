@@ -312,7 +312,17 @@
 
             function refreshResourcePlanSummary() {
                 const projectId = String(state.activeProject?.id ?? '');
-                const totals = state.weeks.map((interval) => Math.round(getResourcePlanCostForInterval(interval, projectId)));
+                const currentBiweeklyIndex = getCurrentBiweeklyIndex();
+                const actualTotals = state.actualTotals.length === state.weeks.length
+                    ? state.actualTotals
+                    : new Array(state.weeks.length).fill(0);
+                const totals = state.weeks.map((interval, idx) => {
+                    if (currentBiweeklyIndex >= 0 && idx < currentBiweeklyIndex) {
+                        return Math.round(getResourcePlanCostForInterval(interval, projectId));
+                    }
+
+                    return Math.round(actualTotals[idx] || 0);
+                });
 
                 resourcePlanSummaryRow.querySelectorAll('.resource-plan-summary-cell').forEach((cell, idx) => {
                     cell.textContent = String(totals[idx] || 0);
@@ -540,7 +550,10 @@
                 const budget = state.activeBudget || 0;
                 const plannedTotals = calculateSummary();
                 const actualTotals = state.actualTotals.length === state.weeks.length ? state.actualTotals : syncActualTable();
-                const resourcePlanTotals = state.resourcePlanTotals.length === state.weeks.length ? state.resourcePlanTotals : state.weeks.map((interval) => Math.round(getResourcePlanCostForInterval(interval, String(state.activeProject?.id ?? ''))));
+                if (state.resourcePlanTotals.length !== state.weeks.length) {
+                    refreshResourcePlanSummary();
+                }
+                const resourcePlanTotals = state.resourcePlanTotals.length === state.weeks.length ? state.resourcePlanTotals : new Array(state.weeks.length).fill(0);
 
                 if (plannedTotals.some((v) => v > budget)) {
                     alert('Внимание! Экономика проекта отрицательная');

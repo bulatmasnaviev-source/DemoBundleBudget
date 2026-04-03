@@ -77,7 +77,7 @@
             const sendButton = document.getElementById('resourcePlanSendButton');
             const editButton = document.getElementById('resourcePlanEditButton');
             const approveButton = document.getElementById('resourcePlanApproveButton');
-            const state = {intervals: [], projects: [...initialProjects], cells: {}, status: 'NEW', dirty: false, saveTimer: null, savePromise: null};
+            const state = {intervals: [], projects: [...initialProjects], cells: {}, actualCells: {}, status: 'NEW', dirty: false, saveTimer: null, savePromise: null};
             const employeeRateMap = new Map(employees.map((employee) => [String(employee.id), Number(employee.hourlyRate || 0)]));
 
             function applyCellWidth(cell, width) {
@@ -167,6 +167,16 @@
 
             function getCellValue(intervalId, projectId, employeeId) {
                 return state.cells[getCellKey(intervalId, projectId, employeeId)] ?? '';
+            }
+
+            function getActualCellValue(intervalId, projectId, employeeId) {
+                return state.actualCells[getCellKey(intervalId, projectId, employeeId)] ?? '0';
+            }
+
+            function formatHoursValue(value) {
+                const numericValue = Math.round((parseFloat(value || '0') || 0) * 10) / 10;
+
+                return String(numericValue);
             }
 
             function getBaseCellKey(intervalId, employeeId) {
@@ -497,9 +507,11 @@
                         applyCellWidth(td, COLUMN_WIDTH.employee);
                         const value = getCellValue(intervalId, project.id, employee.id);
                         const hours = parseFloat(value || '0') || 0;
+                        const actualHours = parseFloat(getActualCellValue(intervalId, project.id, employee.id) || '0') || 0;
                         rowTotal += hours;
                         rowCost += hours * (Number(employee.hourlyRate || 0) || 0);
-                        td.innerHTML = `<input type="number" min="0" step="0.1" class="form-control resource-hour-input" style="width:100%; box-sizing:border-box;" data-project-id="${project.id}" data-employee-id="${employee.id}" value="${value}">`;
+                        const backgroundColor = actualHours > hours ? '#f8d7da' : '#e9ecef';
+                        td.innerHTML = `<div class="form-control resource-hour-display" style="width:100%; box-sizing:border-box; background-color:${backgroundColor}; pointer-events:none;">${formatHoursValue(value)}/${formatHoursValue(actualHours)}</div>`;
                         tr.appendChild(td);
                     });
 
@@ -542,6 +554,7 @@
                 const response = await fetch(getUrl(getUrlTemplate, intervalId));
                 if (!response.ok) {
                     state.cells = {};
+                    state.actualCells = {};
                     state.status = 'NEW';
                     state.dirty = false;
                     restoreProjectsForInterval(intervalId);
@@ -551,6 +564,7 @@
 
                 const payload = await response.json();
                 state.cells = payload.cells && typeof payload.cells === 'object' ? payload.cells : {};
+                state.actualCells = payload.actualCells && typeof payload.actualCells === 'object' ? payload.actualCells : {};
                 state.status = STATUS[payload.status] ? payload.status : 'NEW';
                 state.dirty = false;
                 restoreProjectsForInterval(intervalId);

@@ -217,14 +217,16 @@ final class DemoController extends AbstractController
         $data = $this->resourcePlanStorage->loadByIntervalId($intervalId);
         $status = $this->normalizeResourcePlanStatus($data === null ? 'NEW' : (string) ($data['status'] ?? 'NEW'));
         $cells = $data === null || !\is_array($data['cells'] ?? null) ? [] : $data['cells'];
+        $actualCells = $this->buildResourcePlanActualCells($intervalId);
 
         if ($data === null) {
-            return new JsonResponse(['status' => 'NEW', 'cells' => $cells]);
+            return new JsonResponse(['status' => 'NEW', 'cells' => $cells, 'actualCells' => $actualCells]);
         }
 
         return new JsonResponse([
             'status' => $status,
             'cells' => $cells,
+            'actualCells' => $actualCells,
         ]);
     }
 
@@ -429,6 +431,48 @@ final class DemoController extends AbstractController
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    private function buildResourcePlanActualCells(string $intervalId): array
+    {
+        $intervalStart = \DateTimeImmutable::createFromFormat('Y-m-d', $intervalId);
+        if (!$intervalStart instanceof \DateTimeImmutable) {
+            return [];
+        }
+
+        $periodStart = $intervalStart->setTime(0, 0, 0);
+        $periodEnd = $intervalStart->modify('+13 days')->setTime(23, 59, 59);
+        $approvedWeekMap = $this->getApprovedWeekMap($periodStart, $periodEnd);
+        $actualCells = [];
+
+        $timesheets = $this->entityManager->getRepository(Timesheet::class)->createQueryBuilder('t')
+            ->andWhere('t.begin >= :begin')
+            ->andWhere('t.begin <= :end')
+            ->setParameter('begin', $periodStart)
+            ->setParameter('end', $periodEnd)
+            ->getQuery()
+            ->getResult();
+
+        foreach ($timesheets as $timesheet) {
+            if (!$timesheet instanceof Timesheet || $timesheet->getBegin() === null || $timesheet->getUser() === null || $timesheet->getProject() === null) {
+                continue;
+            }
+
+            $weekStart = (new \DateTimeImmutable($timesheet->getBegin()->format('Y-m-d')))->modify('monday this week')->format('Y-m-d');
+            $userId = (string) $timesheet->getUser()->getId();
+            if (\is_array($approvedWeekMap) && !isset($approvedWeekMap[$userId . '|' . $weekStart])) {
+                continue;
+            }
+
+            $cellKey = $intervalId . '::' . $timesheet->getProject()->getId() . '::' . $userId;
+            if (!isset($actualCells[$cellKey])) {
+                $actualCells[$cellKey] = 0.0;
+            }
+
+            $actualCells[$cellKey] += max(0, (int) $timesheet->getDuration()) / 3600;
+        }
+
+        return array_map(static fn (float $hours): string => (string) round($hours, 1), $actualCells);
     }
 
     private function buildResourcePlanSourceCells(string $intervalId): array
