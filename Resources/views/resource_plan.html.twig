@@ -267,7 +267,7 @@
                     input.disabled = locked;
                 });
                 resourcePlanBody.querySelectorAll('.resource-hour-input').forEach((input) => {
-                    input.disabled = true;
+                    input.disabled = locked;
                 });
             }
 
@@ -361,6 +361,16 @@
                 }
             }
 
+            function getResourceHourCellMarkup(projectId, employeeId, planHours, actualHours, locked) {
+                const highlightColor = actualHours > planHours ? '#f8d7da' : '#e9ecef';
+
+                if (locked) {
+                    return `<div class="form-control resource-hour-display" style="width:100%; box-sizing:border-box; background-color:${highlightColor}; pointer-events:none;">${formatHoursValue(planHours)}/${formatHoursValue(actualHours)}</div>`;
+                }
+
+                return `<div class="d-flex align-items-center gap-1"><input type="number" min="0" step="0.1" class="form-control resource-hour-input" style="width:100%; box-sizing:border-box; background-color:${actualHours > planHours ? '#f8d7da' : '#ffffff'};" data-project-id="${projectId}" data-employee-id="${employeeId}" value="${formatHoursValue(planHours)}"><span class="text-muted">/${formatHoursValue(actualHours)}</span></div>`;
+            }
+
             async function persistInterval(intervalId, status, cells, rerenderOnSuccess = false) {
                 cells[getProjectOrderKey(intervalId)] = JSON.stringify(state.projects.map((project) => project.id));
                 const response = await fetch(getUrl(statusUrlTemplate, intervalId), {
@@ -449,6 +459,7 @@
                 resourcePlanHead.appendChild(headerRow);
 
                 const intervalId = getIntervalId();
+                const locked = STATUS[state.status]?.locked ?? false;
 
                 const rateRow = document.createElement('tr');
                 const rateLabel = document.createElement('th');
@@ -510,8 +521,7 @@
                         const actualHours = parseFloat(getActualCellValue(intervalId, project.id, employee.id) || '0') || 0;
                         rowTotal += hours;
                         rowCost += hours * (Number(employee.hourlyRate || 0) || 0);
-                        const backgroundColor = actualHours > hours ? '#f8d7da' : '#e9ecef';
-                        td.innerHTML = `<div class="form-control resource-hour-display" style="width:100%; box-sizing:border-box; background-color:${backgroundColor}; pointer-events:none;">${formatHoursValue(value)}/${formatHoursValue(actualHours)}</div>`;
+                        td.innerHTML = getResourceHourCellMarkup(project.id, employee.id, hours, actualHours, locked);
                         tr.appendChild(td);
                     });
 
