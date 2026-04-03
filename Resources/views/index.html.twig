@@ -117,6 +117,7 @@
             const planStatusUrlTemplate = '{{ path('demo_budget_plan_status', {'project': 'PROJECT_ID'}) }}';
             const actualCostsUrlTemplate = '{{ path('demo_budget_plan_actual_costs', {'project': 'PROJECT_ID'}) }}';
             const resourcePlanGetUrlTemplate = '{{ path('demo_resource_plan_get', {'intervalId': 'INTERVAL_ID'}) }}';
+            const resourcePlanStatusUrlTemplate = '{{ path('demo_resource_plan_status', {'intervalId': 'INTERVAL_ID'}) }}';
 
             const STATUS = {
                 NEW: {label: 'Новый', color: '#000000', locked: false},
@@ -421,6 +422,7 @@
                 rowsForActual.forEach((rowData) => {
                     const employee = getEmployeeMeta(rowData.employeeId);
                     const tr = document.createElement('tr');
+                    tr.dataset.employeeId = rowData.employeeId;
                     tr.dataset.rate = String(employee.rate);
                     tr.innerHTML = `<td>${employee.name}</td><td>${employee.rate}</td>`;
                     applyCellWidth(tr.children[0], COLUMN_WIDTH.employee);
@@ -628,6 +630,86 @@
                 };
             }
 
+            async function saveCurrentResourcePlanIntervalFromActualTable() {
+                const currentBiweeklyIndex = getCurrentBiweeklyIndex();
+                const intervalId = state.weeks[currentBiweeklyIndex]?.resourcePlanId ?? null;
+
+                if (!state.activeProject || !intervalId || !['NEW', 'CORRECTING'].includes(state.currentResourcePlan.status)) {
+                    return;
+                }
+
+                const cells = {...state.currentResourcePlan.cells};
+                const projectId = String(state.activeProject.id);
+                const projectOrderKey = `${intervalId}::__projects__`;
+                const projectSnapshotsKey = `${intervalId}::__project_snapshots__`;
+                let projectIds = [];
+                let projectSnapshots = [];
+
+                try {
+                    projectIds = JSON.parse(String(cells[projectOrderKey] || '[]'));
+                } catch (_error) {
+                    projectIds = [];
+                }
+
+                try {
+                    projectSnapshots = JSON.parse(String(cells[projectSnapshotsKey] || '[]'));
+                } catch (_error) {
+                    projectSnapshots = [];
+                }
+
+                if (!projectIds.map((item) => String(item)).includes(projectId)) {
+                    projectIds.push(state.activeProject.id);
+                }
+
+                if (!projectSnapshots.some((project) => String(project.id) === projectId)) {
+                    projectSnapshots.push({
+                        id: state.activeProject.id,
+                        name: state.activeProject.name,
+                    });
+                }
+
+                cells[projectOrderKey] = JSON.stringify(projectIds);
+                cells[projectSnapshotsKey] = JSON.stringify(projectSnapshots);
+
+                actualTableBody.querySelectorAll('tr[data-employee-id]').forEach((row) => {
+                    const employeeId = String(row.dataset.employeeId || '');
+                    if (!employeeId) {
+                        return;
+                    }
+
+                    const cellsByPeriod = row.querySelectorAll('.actual-hour-cell');
+                    const targetCell = cellsByPeriod[currentBiweeklyIndex];
+                    if (!targetCell) {
+                        return;
+                    }
+
+                    const input = targetCell.querySelector('.actual-hour-input');
+                    const hours = input ? (parseFloat(input.value || '0') || 0) : (parseFloat(targetCell.dataset.hours || '0') || 0);
+                    cells[`${intervalId}::${projectId}::${employeeId}`] = String(hours);
+                });
+
+                const response = await fetch(getResourcePlanUrl(resourcePlanStatusUrlTemplate, intervalId), {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        status: state.currentResourcePlan.status,
+                        cells,
+                    }),
+                });
+
+                if (!response.ok) {
+                    alert('Не удалось сохранить ресурсный план из нижней таблицы');
+                    return;
+                }
+
+                const payload = await response.json();
+                state.currentResourcePlan = {
+                    intervalId,
+                    status: ['DISCUSSION', 'APPROVED', 'CORRECTING'].includes(payload.status) ? payload.status : 'NEW',
+                    cells: payload.cells && typeof payload.cells === 'object' ? payload.cells : cells,
+                };
+            }
+
             async function savePlan(status) {
                 const payload = { status, rows: getCurrentRowsPayload() };
                 const response = await fetch(getPlanUrl(planStatusUrlTemplate, state.activeProject.id), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
@@ -664,7 +746,10 @@
             }
 
             document.getElementById('addRowButton').addEventListener('click', function () { createRow(); setStatus(state.status); calculateSummary(); syncActualTable(); });
-            document.getElementById('buildChartButton').addEventListener('click', function () { renderChart(); });
+            document.getElementById('buildChartButton').addEventListener('click', async function () {
+                await saveCurrentResourcePlanIntervalFromActualTable();
+                renderChart();
+            });
             document.getElementById('sendForApprovalButton').addEventListener('click', function () { if (state.activeProject) savePlan('SENT'); });
             document.getElementById('approvePlanButton').addEventListener('click', function () { if (isAdmin && state.activeProject) savePlan('APPROVED'); });
             document.getElementById('rejectPlanButton').addEventListener('click', function () { if (isAdmin && state.activeProject) savePlan('REJECTED'); });

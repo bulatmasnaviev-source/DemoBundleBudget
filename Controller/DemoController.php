@@ -218,13 +218,6 @@ final class DemoController extends AbstractController
         $status = $this->normalizeResourcePlanStatus($data === null ? 'NEW' : (string) ($data['status'] ?? 'NEW'));
         $cells = $data === null || !\is_array($data['cells'] ?? null) ? [] : $data['cells'];
 
-        if (\in_array($status, ['NEW', 'CORRECTING'], true)) {
-            $sourceCells = $this->buildResourcePlanSourceCells($intervalId);
-            foreach ($sourceCells as $key => $value) {
-                $cells[$key] = $value;
-            }
-        }
-
         if ($data === null) {
             return new JsonResponse(['status' => 'NEW', 'cells' => $cells]);
         }
