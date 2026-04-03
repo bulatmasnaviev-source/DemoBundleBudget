@@ -137,6 +137,26 @@
                 return intervals;
             }
 
+            function getCurrentIntervalId(intervals) {
+                const today = new Date();
+                today.setHours(12, 0, 0, 0);
+
+                const currentInterval = intervals.find((interval) => {
+                    const intervalStart = new Date(`${interval.id}T00:00:00`);
+                    const intervalEnd = new Date(intervalStart);
+                    intervalEnd.setDate(intervalEnd.getDate() + 13);
+                    intervalEnd.setHours(23, 59, 59, 999);
+
+                    return today >= intervalStart && today <= intervalEnd;
+                });
+
+                if (currentInterval) {
+                    return currentInterval.id;
+                }
+
+                return intervals[0]?.id ?? '';
+            }
+
             function getCellKey(intervalId, projectId, employeeId) {
                 return `${intervalId}::${projectId}::${employeeId}`;
             }
@@ -637,8 +657,9 @@
             state.intervals = buildBiweeklyIntervals(new Date().getFullYear());
             renderIntervals();
             if (state.intervals.length > 0) {
-                planningIntervalSelect.value = state.intervals[0].id;
-                loadInterval(state.intervals[0].id);
+                const defaultIntervalId = getCurrentIntervalId(state.intervals);
+                planningIntervalSelect.value = defaultIntervalId;
+                loadInterval(defaultIntervalId);
             } else {
                 renderTable();
             }
