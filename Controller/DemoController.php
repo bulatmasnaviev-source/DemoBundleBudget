@@ -133,7 +133,8 @@ final class DemoController extends AbstractController
         return $this->render('@Demo/resource_plan.html.twig', [
             'page_setup' => $page,
             'employees' => $this->buildEmployeeData(),
-            'active_projects' => $this->buildActiveProjects(),
+            'active_projects' => $this->buildApprovedBudgetProjects(),
+            'all_active_projects' => $this->buildActiveProjects(),
         ]);
     }
 
@@ -194,6 +195,18 @@ final class DemoController extends AbstractController
         }
 
         return $activeProjects;
+    }
+
+    private function buildApprovedBudgetProjects(): array
+    {
+        return array_values(array_filter(
+            $this->buildActiveProjects(),
+            function (array $project): bool {
+                $statusData = $this->budgetPlanStorage->loadByProjectId((int) ($project['id'] ?? 0));
+
+                return \is_array($statusData) && $this->normalizePlanStatus((string) ($statusData['status'] ?? 'NEW')) === 'APPROVED';
+            }
+        ));
     }
 
 

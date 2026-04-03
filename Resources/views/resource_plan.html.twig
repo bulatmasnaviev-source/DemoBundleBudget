@@ -11,6 +11,15 @@
                 <select id="planningIntervalSelect" class="form-select"></select>
             </div>
 
+            <div class="d-flex align-items-end gap-2 mb-3" style="max-width: 28rem;">
+                <div class="flex-grow-1">
+                    <label class="form-label" for="resourceProjectPicker">Проект</label>
+                    <input id="resourceProjectPicker" class="form-control" list="resourceProjectOptions" autocomplete="off">
+                    <datalist id="resourceProjectOptions"></datalist>
+                </div>
+                <button id="addResourceProjectButton" type="button" class="btn btn-outline-primary">+</button>
+            </div>
+
             <div class="d-flex flex-wrap gap-2 mb-3">
                 <button id="resourcePlanSendButton" type="button" class="btn btn-secondary">Отправить</button>
                 <button id="resourcePlanEditButton" type="button" class="btn btn-warning">Редактировать</button>
@@ -38,7 +47,8 @@
     <script>
         (function () {
             const employees = {{ employees|json_encode|raw }};
-            const activeProjects = {{ active_projects|json_encode|raw }};
+            const initialProjects = {{ active_projects|json_encode|raw }};
+            const allActiveProjects = {{ all_active_projects|json_encode|raw }};
             const getUrlTemplate = '{{ path('demo_resource_plan_get', {'intervalId': 'INTERVAL_ID'}) }}';
             const statusUrlTemplate = '{{ path('demo_resource_plan_status', {'intervalId': 'INTERVAL_ID'}) }}';
 
@@ -57,6 +67,9 @@
             };
 
             const planningIntervalSelect = document.getElementById('planningIntervalSelect');
+            const resourceProjectPicker = document.getElementById('resourceProjectPicker');
+            const resourceProjectOptions = document.getElementById('resourceProjectOptions');
+            const addResourceProjectButton = document.getElementById('addResourceProjectButton');
             const resourcePlanHead = document.getElementById('resourcePlanHead');
             const resourcePlanBody = document.getElementById('resourcePlanBody');
             const resourcePlanFoot = document.getElementById('resourcePlanFoot');
@@ -64,7 +77,7 @@
             const sendButton = document.getElementById('resourcePlanSendButton');
             const editButton = document.getElementById('resourcePlanEditButton');
             const approveButton = document.getElementById('resourcePlanApproveButton');
-            const state = {intervals: [], cells: {}, status: 'NEW', dirty: false, saveTimer: null, savePromise: null};
+            const state = {intervals: [], projects: [...initialProjects], cells: {}, status: 'NEW', dirty: false, saveTimer: null, savePromise: null};
             const employeeRateMap = new Map(employees.map((employee) => [String(employee.id), Number(employee.hourlyRate || 0)]));
 
             function applyCellWidth(cell, width) {
@@ -145,11 +158,45 @@
                 return value === undefined || value === null || value === '' ? '80' : value;
             }
 
+            function getProjectOrderKey(intervalId) {
+                return `${intervalId}::__projects__`;
+            }
+
+            function syncProjectOrderToCells(intervalId) {
+                state.cells[getProjectOrderKey(intervalId)] = JSON.stringify(state.projects.map((project) => project.id));
+            }
+
+            function restoreProjectsForInterval(intervalId) {
+                const rawProjectIds = state.cells[getProjectOrderKey(intervalId)];
+                if (typeof rawProjectIds !== 'string' || rawProjectIds === '') {
+                    state.projects = [...initialProjects];
+                    syncProjectOrderToCells(intervalId);
+                    return;
+                }
+
+                let ids = [];
+                try {
+                    ids = JSON.parse(rawProjectIds);
+                } catch (_error) {
+                    ids = [];
+                }
+
+                const projectMap = new Map(allActiveProjects.map((project) => [String(project.id), project]));
+                const restoredProjects = ids
+                    .map((projectId) => projectMap.get(String(projectId)))
+                    .filter((project) => Boolean(project));
+
+                state.projects = restoredProjects.length > 0 ? restoredProjects : [...initialProjects];
+                syncProjectOrderToCells(intervalId);
+            }
+
             function setStatus(status) {
                 state.status = STATUS[status] ? status : 'NEW';
                 statusLabel.textContent = STATUS[state.status].label;
                 statusLabel.style.color = STATUS[state.status].color;
                 const locked = STATUS[state.status].locked;
+                resourceProjectPicker.disabled = locked;
+                addResourceProjectButton.disabled = locked;
                 resourcePlanHead.querySelectorAll('.resource-base-input').forEach((input) => {
                     input.disabled = locked;
                 });
@@ -159,7 +206,7 @@
             }
 
             function calculateColumnTotals(intervalId) {
-                return employees.map((employee) => activeProjects.reduce((sum, project) => {
+                return employees.map((employee) => state.projects.reduce((sum, project) => {
                     return sum + (parseFloat(getCellValue(intervalId, project.id, employee.id) || '0') || 0);
                 }, 0));
             }
@@ -249,6 +296,7 @@
             }
 
             async function persistInterval(intervalId, status, cells, rerenderOnSuccess = false) {
+                cells[getProjectOrderKey(intervalId)] = JSON.stringify(state.projects.map((project) => project.id));
                 const response = await fetch(getUrl(statusUrlTemplate, intervalId), {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -379,7 +427,7 @@
                 baseRow.appendChild(baseCost);
                 resourcePlanHead.appendChild(baseRow);
 
-                activeProjects.forEach((project) => {
+                state.projects.forEach((project) => {
                     const tr = document.createElement('tr');
                     const projectCell = document.createElement('td');
                     projectCell.textContent = project.name;
@@ -413,11 +461,25 @@
                 });
 
                 renderFooter(intervalId);
+                renderProjectOptions();
                 setStatus(state.status);
             }
 
             function renderIntervals() {
                 planningIntervalSelect.innerHTML = state.intervals.map((interval) => `<option value="${interval.id}">${interval.label}</option>`).join('');
+            }
+
+            function renderProjectOptions() {
+                const existingProjectIds = new Set(state.projects.map((project) => String(project.id)));
+                resourceProjectOptions.innerHTML = allActiveProjects
+                    .filter((project) => !existingProjectIds.has(String(project.id)))
+                    .map((project) => `<option value="${project.name}"></option>`)
+                    .join('');
+            }
+
+            function findSelectedProject() {
+                const selectedName = String(resourceProjectPicker.value || '').trim();
+                return allActiveProjects.find((project) => String(project.name) === selectedName) || null;
             }
 
             async function loadInterval(intervalId) {
@@ -426,6 +488,7 @@
                     state.cells = {};
                     state.status = 'NEW';
                     state.dirty = false;
+                    restoreProjectsForInterval(intervalId);
                     renderTable();
                     return;
                 }
@@ -434,6 +497,7 @@
                 state.cells = payload.cells && typeof payload.cells === 'object' ? payload.cells : {};
                 state.status = STATUS[payload.status] ? payload.status : 'NEW';
                 state.dirty = false;
+                restoreProjectsForInterval(intervalId);
                 renderTable();
             }
 
@@ -471,6 +535,26 @@
                 }
 
                 loadInterval(this.value);
+            });
+
+            addResourceProjectButton.addEventListener('click', function () {
+                const project = findSelectedProject();
+                if (!project) {
+                    return;
+                }
+
+                if (state.projects.some((item) => String(item.id) === String(project.id))) {
+                    resourceProjectPicker.value = '';
+                    renderProjectOptions();
+                    return;
+                }
+
+                state.projects.push(project);
+                syncProjectOrderToCells(getIntervalId());
+                resourceProjectPicker.value = '';
+                state.dirty = true;
+                renderTable();
+                scheduleAutosave();
             });
 
             resourcePlanBody.addEventListener('input', function (event) {
