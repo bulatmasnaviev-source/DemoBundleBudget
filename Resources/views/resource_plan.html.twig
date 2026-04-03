@@ -53,6 +53,7 @@
                 project: '18rem',
                 employee: '8rem',
                 total: '8rem',
+                cost: '10rem',
             };
 
             const planningIntervalSelect = document.getElementById('planningIntervalSelect');
@@ -64,6 +65,7 @@
             const editButton = document.getElementById('resourcePlanEditButton');
             const approveButton = document.getElementById('resourcePlanApproveButton');
             const state = {intervals: [], cells: {}, status: 'NEW', dirty: false, saveTimer: null, savePromise: null};
+            const employeeRateMap = new Map(employees.map((employee) => [String(employee.id), Number(employee.hourlyRate || 0)]));
 
             function applyCellWidth(cell, width) {
                 cell.style.width = width;
@@ -134,11 +136,23 @@
                 return state.cells[getCellKey(intervalId, projectId, employeeId)] ?? '';
             }
 
+            function getBaseCellKey(intervalId, employeeId) {
+                return `${intervalId}::__base__::${employeeId}`;
+            }
+
+            function getBaseValue(intervalId, employeeId) {
+                const value = state.cells[getBaseCellKey(intervalId, employeeId)];
+                return value === undefined || value === null || value === '' ? '80' : value;
+            }
+
             function setStatus(status) {
                 state.status = STATUS[status] ? status : 'NEW';
                 statusLabel.textContent = STATUS[state.status].label;
                 statusLabel.style.color = STATUS[state.status].color;
                 const locked = STATUS[state.status].locked;
+                resourcePlanHead.querySelectorAll('.resource-base-input').forEach((input) => {
+                    input.disabled = locked;
+                });
                 resourcePlanBody.querySelectorAll('.resource-hour-input').forEach((input) => {
                     input.disabled = locked;
                 });
@@ -171,6 +185,10 @@
                 applyCellWidth(summaryEnd, COLUMN_WIDTH.total);
                 summaryEnd.textContent = '—';
                 summaryRow.appendChild(summaryEnd);
+                const summaryCostEnd = document.createElement('td');
+                applyCellWidth(summaryCostEnd, COLUMN_WIDTH.cost);
+                summaryCostEnd.textContent = '—';
+                summaryRow.appendChild(summaryCostEnd);
                 resourcePlanFoot.appendChild(summaryRow);
 
                 const reserveRow = document.createElement('tr');
@@ -180,8 +198,9 @@
                 reserveRow.appendChild(reserveLabel);
 
                 let reserveTotal = 0;
-                totals.forEach((total) => {
-                    const reserve = Math.round((80 - total) * 10) / 10;
+                totals.forEach((total, index) => {
+                    const baseValue = parseFloat(getBaseValue(intervalId, employees[index].id) || '80') || 0;
+                    const reserve = Math.round((baseValue - total) * 10) / 10;
                     reserveTotal += reserve;
                     const cell = document.createElement('td');
                     applyCellWidth(cell, COLUMN_WIDTH.employee);
@@ -197,6 +216,10 @@
                 applyCellWidth(reserveEnd, COLUMN_WIDTH.total);
                 reserveEnd.textContent = String(Math.round(reserveTotal * 10) / 10);
                 reserveRow.appendChild(reserveEnd);
+                const reserveCostEnd = document.createElement('td');
+                applyCellWidth(reserveCostEnd, COLUMN_WIDTH.cost);
+                reserveCostEnd.textContent = '—';
+                reserveRow.appendChild(reserveCostEnd);
                 resourcePlanFoot.appendChild(reserveRow);
             }
 
@@ -206,13 +229,22 @@
                 }
 
                 let rowTotal = 0;
+                let rowCost = 0;
                 row.querySelectorAll('.resource-hour-input').forEach((input) => {
-                    rowTotal += parseFloat(input.value || '0') || 0;
+                    const hours = parseFloat(input.value || '0') || 0;
+                    const rate = employeeRateMap.get(String(input.dataset.employeeId || '')) || 0;
+                    rowTotal += hours;
+                    rowCost += hours * rate;
                 });
 
-                const totalCell = row.lastElementChild;
+                const totalCell = row.querySelector('.resource-row-total');
                 if (totalCell instanceof HTMLElement) {
                     totalCell.textContent = String(Math.round(rowTotal * 10) / 10);
+                }
+
+                const costCell = row.querySelector('.resource-row-cost');
+                if (costCell instanceof HTMLElement) {
+                    costCell.textContent = String(Math.round(rowCost * 10) / 10);
                 }
             }
 
@@ -296,9 +328,57 @@
                 totalHeader.textContent = 'Итого';
                 applyCellWidth(totalHeader, COLUMN_WIDTH.total);
                 headerRow.appendChild(totalHeader);
+                const costHeader = document.createElement('th');
+                costHeader.textContent = 'Затраты';
+                applyCellWidth(costHeader, COLUMN_WIDTH.cost);
+                headerRow.appendChild(costHeader);
                 resourcePlanHead.appendChild(headerRow);
 
                 const intervalId = getIntervalId();
+
+                const rateRow = document.createElement('tr');
+                const rateLabel = document.createElement('th');
+                rateLabel.textContent = 'Ставка';
+                applyCellWidth(rateLabel, COLUMN_WIDTH.project);
+                rateRow.appendChild(rateLabel);
+                employees.forEach((employee) => {
+                    const td = document.createElement('td');
+                    applyCellWidth(td, COLUMN_WIDTH.employee);
+                    td.textContent = String(Math.round((Number(employee.hourlyRate || 0)) * 10) / 10);
+                    rateRow.appendChild(td);
+                });
+                const rateTotal = document.createElement('td');
+                applyCellWidth(rateTotal, COLUMN_WIDTH.total);
+                rateTotal.textContent = '—';
+                rateRow.appendChild(rateTotal);
+                const rateCost = document.createElement('td');
+                applyCellWidth(rateCost, COLUMN_WIDTH.cost);
+                rateCost.textContent = '—';
+                rateRow.appendChild(rateCost);
+                resourcePlanHead.appendChild(rateRow);
+
+                const baseRow = document.createElement('tr');
+                const baseLabel = document.createElement('th');
+                baseLabel.textContent = 'База для расчета';
+                applyCellWidth(baseLabel, COLUMN_WIDTH.project);
+                baseRow.appendChild(baseLabel);
+                employees.forEach((employee) => {
+                    const td = document.createElement('td');
+                    applyCellWidth(td, COLUMN_WIDTH.employee);
+                    const value = getBaseValue(intervalId, employee.id);
+                    td.innerHTML = `<input type="number" min="0" step="0.1" class="form-control resource-base-input" style="width:100%; box-sizing:border-box;" data-employee-id="${employee.id}" value="${value}">`;
+                    baseRow.appendChild(td);
+                });
+                const baseTotal = document.createElement('td');
+                applyCellWidth(baseTotal, COLUMN_WIDTH.total);
+                baseTotal.textContent = '—';
+                baseRow.appendChild(baseTotal);
+                const baseCost = document.createElement('td');
+                applyCellWidth(baseCost, COLUMN_WIDTH.cost);
+                baseCost.textContent = '—';
+                baseRow.appendChild(baseCost);
+                resourcePlanHead.appendChild(baseRow);
+
                 activeProjects.forEach((project) => {
                     const tr = document.createElement('tr');
                     const projectCell = document.createElement('td');
@@ -307,19 +387,28 @@
                     tr.appendChild(projectCell);
 
                     let rowTotal = 0;
+                    let rowCost = 0;
                     employees.forEach((employee) => {
                         const td = document.createElement('td');
                         applyCellWidth(td, COLUMN_WIDTH.employee);
                         const value = getCellValue(intervalId, project.id, employee.id);
-                        rowTotal += parseFloat(value || '0') || 0;
+                        const hours = parseFloat(value || '0') || 0;
+                        rowTotal += hours;
+                        rowCost += hours * (Number(employee.hourlyRate || 0) || 0);
                         td.innerHTML = `<input type="number" min="0" step="0.1" class="form-control resource-hour-input" style="width:100%; box-sizing:border-box;" data-project-id="${project.id}" data-employee-id="${employee.id}" value="${value}">`;
                         tr.appendChild(td);
                     });
 
                     const totalCell = document.createElement('td');
+                    totalCell.className = 'resource-row-total';
                     applyCellWidth(totalCell, COLUMN_WIDTH.total);
                     totalCell.textContent = String(Math.round(rowTotal * 10) / 10);
                     tr.appendChild(totalCell);
+                    const costCell = document.createElement('td');
+                    costCell.className = 'resource-row-cost';
+                    applyCellWidth(costCell, COLUMN_WIDTH.cost);
+                    costCell.textContent = String(Math.round(rowCost * 10) / 10);
+                    tr.appendChild(costCell);
                     resourcePlanBody.appendChild(tr);
                 });
 
@@ -396,6 +485,19 @@
                 state.cells[key] = event.target.value;
                 state.dirty = true;
                 updateRowTotal(event.target.closest('tr'));
+                renderFooter(intervalId);
+                scheduleAutosave();
+            });
+
+            resourcePlanHead.addEventListener('input', function (event) {
+                if (!event.target.classList.contains('resource-base-input')) {
+                    return;
+                }
+
+                const intervalId = getIntervalId();
+                const employeeId = String(event.target.dataset.employeeId || '');
+                state.cells[getBaseCellKey(intervalId, employeeId)] = event.target.value;
+                state.dirty = true;
                 renderFooter(intervalId);
                 scheduleAutosave();
             });
