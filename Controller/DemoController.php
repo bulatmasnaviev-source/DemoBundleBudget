@@ -215,14 +215,23 @@ final class DemoController extends AbstractController
     public function getResourcePlan(string $intervalId): JsonResponse
     {
         $data = $this->resourcePlanStorage->loadByIntervalId($intervalId);
+        $status = $this->normalizeResourcePlanStatus($data === null ? 'NEW' : (string) ($data['status'] ?? 'NEW'));
+        $cells = $data === null || !\is_array($data['cells'] ?? null) ? [] : $data['cells'];
+
+        if (\in_array($status, ['NEW', 'CORRECTING'], true)) {
+            $sourceCells = $this->buildResourcePlanSourceCells($intervalId);
+            foreach ($sourceCells as $key => $value) {
+                $cells[$key] = $value;
+            }
+        }
 
         if ($data === null) {
-            return new JsonResponse(['status' => 'NEW', 'cells' => []]);
+            return new JsonResponse(['status' => 'NEW', 'cells' => $cells]);
         }
 
         return new JsonResponse([
-            'status' => $this->normalizeResourcePlanStatus((string) ($data['status'] ?? 'NEW')),
-            'cells' => \is_array($data['cells'] ?? null) ? $data['cells'] : [],
+            'status' => $status,
+            'cells' => $cells,
         ]);
     }
 
@@ -427,6 +436,82 @@ final class DemoController extends AbstractController
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    private function buildResourcePlanSourceCells(string $intervalId): array
+    {
+        $intervalStart = \DateTimeImmutable::createFromFormat('Y-m-d', $intervalId);
+        if (!$intervalStart instanceof \DateTimeImmutable) {
+            return [];
+        }
+
+        $cells = [];
+        foreach ($this->entityManager->getRepository(Project::class)->findAll() as $project) {
+            if (!$project instanceof Project) {
+                continue;
+            }
+
+            $projectId = (int) $project->getId();
+            $planData = $this->budgetPlanStorage->loadByProjectId($projectId);
+            $rows = \is_array($planData['rows'] ?? null) ? $planData['rows'] : [];
+            $intervalIndex = $this->findBudgetPlanIntervalIndex($project, $intervalStart);
+            if ($intervalIndex === null) {
+                continue;
+            }
+
+            foreach ($rows as $row) {
+                if (!\is_array($row)) {
+                    continue;
+                }
+
+                $employeeId = $row['employeeId'] ?? null;
+                $hours = \is_array($row['hours'] ?? null) ? $row['hours'] : [];
+                if ($employeeId === null) {
+                    continue;
+                }
+
+                $value = $hours[$intervalIndex] ?? '';
+                if ($value === '' || $value === null) {
+                    continue;
+                }
+
+                $cells[$intervalId . '::' . $projectId . '::' . $employeeId] = (string) $value;
+            }
+        }
+
+        return $cells;
+    }
+
+    private function findBudgetPlanIntervalIndex(Project $project, \DateTimeImmutable $intervalStart): ?int
+    {
+        $projectStart = method_exists($project, 'getStart') ? $project->getStart() : null;
+        $projectEnd = method_exists($project, 'getEnd') ? $project->getEnd() : null;
+
+        if (!$projectStart instanceof \DateTimeInterface || !$projectEnd instanceof \DateTimeInterface || $projectStart > $projectEnd) {
+            return null;
+        }
+
+        $rangeStart = (new \DateTimeImmutable($projectStart->format('Y-m-d')))->modify('monday this week')->modify('-14 days');
+        $rangeEnd = (new \DateTimeImmutable($projectEnd->format('Y-m-d')))->modify('sunday this week')->modify('+14 days')->setTime(23, 59, 59);
+        $cursor = (new \DateTimeImmutable($projectStart->format('Y-01-01')))->modify('monday this week');
+        $index = 0;
+
+        while ($cursor <= $rangeEnd) {
+            $currentIntervalStart = $cursor;
+            $currentIntervalEnd = $cursor->modify('+13 days')->setTime(23, 59, 59);
+
+            if ($currentIntervalEnd >= $rangeStart) {
+                if ($currentIntervalStart->format('Y-m-d') === $intervalStart->format('Y-m-d')) {
+                    return $index;
+                }
+
+                ++$index;
+            }
+
+            $cursor = $cursor->modify('+14 days');
+        }
+
+        return null;
     }
 
     #[Route(path: '{code}', name: 'demo_error', methods: ['GET'])]

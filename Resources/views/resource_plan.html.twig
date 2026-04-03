@@ -162,8 +162,16 @@
                 return `${intervalId}::__projects__`;
             }
 
+            function getProjectSnapshotsKey(intervalId) {
+                return `${intervalId}::__project_snapshots__`;
+            }
+
             function syncProjectOrderToCells(intervalId) {
                 state.cells[getProjectOrderKey(intervalId)] = JSON.stringify(state.projects.map((project) => project.id));
+                state.cells[getProjectSnapshotsKey(intervalId)] = JSON.stringify(state.projects.map((project) => ({
+                    id: project.id,
+                    name: project.name,
+                })));
             }
 
             function restoreProjectsForInterval(intervalId) {
@@ -181,12 +189,40 @@
                     ids = [];
                 }
 
+                let snapshotProjects = [];
+                try {
+                    const rawSnapshotProjects = state.cells[getProjectSnapshotsKey(intervalId)];
+                    snapshotProjects = typeof rawSnapshotProjects === 'string' ? JSON.parse(rawSnapshotProjects) : [];
+                } catch (_error) {
+                    snapshotProjects = [];
+                }
+
                 const projectMap = new Map(allActiveProjects.map((project) => [String(project.id), project]));
+                snapshotProjects.forEach((project) => {
+                    if (!projectMap.has(String(project.id))) {
+                        projectMap.set(String(project.id), project);
+                    }
+                });
                 const restoredProjects = ids
                     .map((projectId) => projectMap.get(String(projectId)))
                     .filter((project) => Boolean(project));
 
-                state.projects = restoredProjects.length > 0 ? restoredProjects : [...initialProjects];
+                if (STATUS[state.status]?.locked) {
+                    state.projects = restoredProjects.length > 0 ? restoredProjects : [...initialProjects];
+                } else {
+                    const mergedProjects = [...initialProjects];
+                    const mergedProjectIds = new Set(mergedProjects.map((project) => String(project.id)));
+
+                    restoredProjects.forEach((project) => {
+                        if (!mergedProjectIds.has(String(project.id))) {
+                            mergedProjects.push(project);
+                            mergedProjectIds.add(String(project.id));
+                        }
+                    });
+
+                    state.projects = mergedProjects;
+                }
+
                 syncProjectOrderToCells(intervalId);
             }
 
@@ -201,7 +237,7 @@
                     input.disabled = locked;
                 });
                 resourcePlanBody.querySelectorAll('.resource-hour-input').forEach((input) => {
-                    input.disabled = locked;
+                    input.disabled = true;
                 });
             }
 
