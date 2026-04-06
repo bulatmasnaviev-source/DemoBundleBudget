@@ -65,7 +65,10 @@ final class DemoController extends AbstractController
         $page->setActionName('demo');
         $page->setActionPayload(['counter' => $entity->getCounter()]);
 
-        $projects = $this->entityManager->getRepository(Project::class)->findAll();
+        $projects = array_values(array_filter(
+            $this->entityManager->getRepository(Project::class)->findAll(),
+            fn (Project $project): bool => $this->isProjectVisible($project)
+        ));
         usort($projects, static fn (Project $a, Project $b) => strcasecmp($a->getName(), $b->getName()));
 
         $projectData = [];
@@ -86,17 +89,6 @@ final class DemoController extends AbstractController
 
         $activeProjectStatuses = [];
         foreach ($projects as $project) {
-            $isVisible = true;
-            if (method_exists($project, 'isVisible')) {
-                $isVisible = (bool) $project->isVisible();
-            } elseif (method_exists($project, 'getVisible')) {
-                $isVisible = (bool) $project->getVisible();
-            }
-
-            if (!$isVisible) {
-                continue;
-            }
-
             $statusData = $this->budgetPlanStorage->loadByProjectId((int) $project->getId());
             $activeProjectStatuses[] = [
                 'id' => $project->getId(),
@@ -201,6 +193,19 @@ final class DemoController extends AbstractController
         }
 
         return array_values($employeeIds);
+    }
+
+    private function isProjectVisible(Project $project): bool
+    {
+        if (method_exists($project, 'isVisible')) {
+            return (bool) $project->isVisible();
+        }
+
+        if (method_exists($project, 'getVisible')) {
+            return (bool) $project->getVisible();
+        }
+
+        return true;
     }
 
     private function buildActiveProjects(): array

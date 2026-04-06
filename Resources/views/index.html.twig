@@ -173,6 +173,8 @@
             function setupManagementLayout() {
                 addRowButton.textContent = '+ Сотрудник';
                 addWorkingRowButton.textContent = '+ Сотрудник';
+                saveWorkingPlanButton.textContent = 'Сохранить Рабочий план';
+                loadSavedWorkingPlanButton.textContent = 'Последний сохр. Рабочий план';
 
                 const statusRow = planStatusLabel.parentElement;
                 const statusContainer = statusRow?.parentElement;
@@ -395,7 +397,7 @@
             function getResourcePlanCostForInterval(interval, projectId) {
                 const resourcePlan = state.resourcePlansByInterval[String(interval?.resourcePlanId || '')];
                 if (!resourcePlan || resourcePlan.status !== 'APPROVED') {
-                    return 0;
+                    return null;
                 }
 
                 return employees.reduce((sum, employee) => {
@@ -409,20 +411,17 @@
 
             function refreshResourcePlanSummary() {
                 const projectId = String(state.activeProject?.id ?? '');
-                const currentBiweeklyIndex = getCurrentBiweeklyIndex();
-                const actualTotals = state.actualTotals.length === state.weeks.length
-                    ? state.actualTotals
-                    : new Array(state.weeks.length).fill(0);
-                const totals = state.weeks.map((interval, idx) => {
-                    if (currentBiweeklyIndex >= 0 && idx < currentBiweeklyIndex) {
-                        return Math.round(getResourcePlanCostForInterval(interval, projectId));
-                    }
-
-                    return Math.round(actualTotals[idx] || 0);
+                const displayValues = state.weeks.map((interval) => {
+                    const cost = getResourcePlanCostForInterval(interval, projectId);
+                    return cost === null ? '' : String(Math.round(cost));
+                });
+                const totals = state.weeks.map((interval) => {
+                    const cost = getResourcePlanCostForInterval(interval, projectId);
+                    return cost === null ? 0 : Math.round(cost);
                 });
 
                 resourcePlanSummaryRow.querySelectorAll('.resource-plan-summary-cell').forEach((cell, idx) => {
-                    cell.textContent = String(totals[idx] || 0);
+                    cell.textContent = displayValues[idx] ?? '';
                 });
 
                 state.resourcePlanTotals = totals;
@@ -825,9 +824,9 @@
                     ${resourcePlanPts.filter((pt) => pt.value !== null && pt.y !== null).map((pt) => `<circle cx="${pt.x}" cy="${pt.y}" r="3" fill="#2fb344" />`).join('')}
                     ${plannedPts.map((pt) => `<circle cx="${pt.x}" cy="${pt.y}" r="3" fill="${pt.value < 0 ? '#dc3545' : '#206bc4'}" />`).join('')}
                     ${plannedPts.map((pt, idx) => buildAxisLabel(pt, xLabels[idx] || '')).join('')}
-                    ${plannedPts.map((pt) => `<text x="${pt.x}" y="${pt.y - 10}" text-anchor="middle" font-size="10" fill="#206bc4">${Math.round(pt.value)}</text>`).join('')}
-                    ${actualPts.map((pt) => `<text x="${pt.x}" y="${pt.y + 14}" text-anchor="middle" font-size="10" fill="#000000">${Math.round(pt.value)}</text>`).join('')}
-                    ${resourcePlanPts.filter((pt) => pt.value !== null && pt.y !== null).map((pt) => `<text x="${pt.x}" y="${pt.y - 24}" text-anchor="middle" font-size="10" fill="#2fb344">${Math.round(pt.value)}</text>`).join('')}
+                    ${plannedPts.map((pt) => `<text x="${pt.x}" y="${pt.y - 12}" text-anchor="middle" font-size="10" fill="#206bc4">${Math.round(pt.value)}</text>`).join('')}
+                    ${actualPts.map((pt) => `<text x="${pt.x}" y="${pt.y + 22}" text-anchor="middle" font-size="10" fill="#000000">${Math.round(pt.value)}</text>`).join('')}
+                    ${resourcePlanPts.filter((pt) => pt.value !== null && pt.y !== null).map((pt) => `<text x="${pt.x}" y="${pt.y - 32}" text-anchor="middle" font-size="10" fill="#2fb344">${Math.round(pt.value)}</text>`).join('')}
                 `;
             }
 
