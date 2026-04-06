@@ -121,6 +121,7 @@
             const planStatusUrlTemplate = '{{ path('demo_budget_plan_status', {'project': 'PROJECT_ID'}) }}';
             const actualCostsUrlTemplate = '{{ path('demo_budget_plan_actual_costs', {'project': 'PROJECT_ID'}) }}';
             const resourcePlanGetUrlTemplate = '{{ path('demo_resource_plan_get', {'intervalId': 'INTERVAL_ID'}) }}';
+            const resourcePlanBulkUrl = '{{ path('demo_resource_plan_bulk') }}';
             const resourcePlanStatusUrlTemplate = '{{ path('demo_resource_plan_status', {'intervalId': 'INTERVAL_ID'}) }}';
             const workingPlanGetUrlTemplate = '{{ path('demo_working_plan_get', {'project': 'PROJECT_ID'}) }}';
             const workingPlanSaveUrlTemplate = '{{ path('demo_working_plan_save', {'project': 'PROJECT_ID'}) }}';
@@ -784,10 +785,37 @@
             }
 
             async function loadResourcePlans(intervals) {
-                const entries = await Promise.all((intervals || []).map(async (interval) => {
-                    const resourcePlan = await loadResourcePlan(interval.resourcePlanId);
-                    return [String(interval.resourcePlanId), resourcePlan];
-                }));
+                const intervalIds = Array.from(new Set((intervals || [])
+                    .map((interval) => String(interval?.resourcePlanId || ''))
+                    .filter((intervalId) => intervalId !== '')));
+
+                if (intervalIds.length === 0) {
+                    return {};
+                }
+
+                const query = intervalIds.map((intervalId) => `intervals[]=${encodeURIComponent(intervalId)}`).join('&');
+                const response = await fetch(`${resourcePlanBulkUrl}?${query}`);
+
+                if (!response.ok) {
+                    const fallbackEntries = await Promise.all(intervalIds.map(async (intervalId) => {
+                        const resourcePlan = await loadResourcePlan(intervalId);
+                        return [intervalId, resourcePlan];
+                    }));
+
+                    return Object.fromEntries(fallbackEntries);
+                }
+
+                const payload = await response.json();
+                const plans = payload.plans && typeof payload.plans === 'object' ? payload.plans : {};
+                const entries = intervalIds.map((intervalId) => {
+                    const plan = plans[intervalId] && typeof plans[intervalId] === 'object' ? plans[intervalId] : {};
+
+                    return [intervalId, {
+                        intervalId,
+                        status: ['DISCUSSION', 'APPROVED', 'CORRECTING'].includes(plan.status) ? plan.status : 'NEW',
+                        cells: plan.cells && typeof plan.cells === 'object' ? plan.cells : {},
+                    }];
+                });
 
                 return Object.fromEntries(entries);
             }

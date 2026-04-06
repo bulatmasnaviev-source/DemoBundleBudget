@@ -231,6 +231,33 @@ final class DemoController extends AbstractController
         ]);
     }
 
+    #[Route(path: '/resource-plans', name: 'demo_resource_plan_bulk', methods: ['GET'])]
+    public function getResourcePlans(Request $request): JsonResponse
+    {
+        $intervalIds = $request->query->all('intervals');
+        if (!\is_array($intervalIds)) {
+            $intervalIds = [];
+        }
+
+        $plans = [];
+        foreach ($intervalIds as $intervalId) {
+            if (!\is_string($intervalId) || $intervalId === '') {
+                continue;
+            }
+
+            $data = $this->resourcePlanStorage->loadByIntervalId($intervalId);
+            $plans[$intervalId] = [
+                'intervalId' => $intervalId,
+                'status' => $this->normalizeResourcePlanStatus($data === null ? 'NEW' : (string) ($data['status'] ?? 'NEW')),
+                'cells' => $data === null || !\is_array($data['cells'] ?? null) ? [] : $data['cells'],
+            ];
+        }
+
+        return new JsonResponse([
+            'plans' => $plans,
+        ]);
+    }
+
     #[Route(path: '/resource-plan/{intervalId}/status', name: 'demo_resource_plan_status', methods: ['POST'])]
     public function setResourcePlanStatus(Request $request, string $intervalId): JsonResponse
     {
