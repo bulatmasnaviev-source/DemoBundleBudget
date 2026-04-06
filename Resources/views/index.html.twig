@@ -123,7 +123,6 @@
             const resourcePlanGetUrlTemplate = '{{ path('demo_resource_plan_get', {'intervalId': 'INTERVAL_ID'}) }}';
             const resourcePlanBulkUrl = '{{ path('demo_resource_plan_bulk') }}';
             const resourcePlanStatusUrlTemplate = '{{ path('demo_resource_plan_status', {'intervalId': 'INTERVAL_ID'}) }}';
-            const managementPlanUrlTemplate = '{{ path('demo_management_plan_get', {'project': 'PROJECT_ID'}) }}';
             const workingPlanGetUrlTemplate = '{{ path('demo_working_plan_get', {'project': 'PROJECT_ID'}) }}';
             const workingPlanSaveUrlTemplate = '{{ path('demo_working_plan_save', {'project': 'PROJECT_ID'}) }}';
 
@@ -835,37 +834,6 @@
                 };
             }
 
-            async function loadManagementPlan(projectId) {
-                const response = await fetch(getPlanUrl(managementPlanUrlTemplate, projectId));
-                if (!response.ok) {
-                    return {
-                        budgetPlan: {status: 'NEW', rows: []},
-                        workingPlan: {rows: [], savedRows: null, hasSaved: false},
-                        resourcePlans: {},
-                    };
-                }
-
-                const payload = await response.json();
-                return {
-                    budgetPlan: payload.budgetPlan && typeof payload.budgetPlan === 'object'
-                        ? {
-                            status: STATUS[payload.budgetPlan.status] ? payload.budgetPlan.status : 'NEW',
-                            rows: Array.isArray(payload.budgetPlan.rows) ? payload.budgetPlan.rows : [],
-                        }
-                        : {status: 'NEW', rows: []},
-                    workingPlan: payload.workingPlan && typeof payload.workingPlan === 'object'
-                        ? {
-                            rows: Array.isArray(payload.workingPlan.rows) ? payload.workingPlan.rows : [],
-                            savedRows: Array.isArray(payload.workingPlan.savedRows) ? payload.workingPlan.savedRows : null,
-                            hasSaved: payload.workingPlan.hasSaved === true,
-                        }
-                        : {rows: [], savedRows: null, hasSaved: false},
-                    resourcePlans: payload.resourcePlans && typeof payload.resourcePlans === 'object'
-                        ? payload.resourcePlans
-                        : {},
-                };
-            }
-
             async function persistWorkingPlan() {
                 if (!state.activeProject) {
                     return;
@@ -1001,10 +969,7 @@
                     return -1;
                 })();
                 const currentResourcePlanIntervalId = currentBiweeklyIndex >= 0 ? alignedWeeks[currentBiweeklyIndex]?.resourcePlanId ?? null : null;
-                const managementPlan = await loadManagementPlan(state.activeProject.id);
-                const saved = managementPlan.budgetPlan;
-                const resourcePlans = managementPlan.resourcePlans;
-                const workingPlan = managementPlan.workingPlan;
+                const [saved, resourcePlans, workingPlan] = await Promise.all([loadSavedPlan(state.activeProject.id), loadResourcePlans(alignedWeeks), loadWorkingPlan(state.activeProject.id)]);
                 state.status = saved.status; state.actualWeeks = []; state.actualMatrix = {}; state.actualOverrides = {}; state.resourcePlansByInterval = resourcePlans; state.currentResourcePlan = resourcePlans[String(currentResourcePlanIntervalId)] || {intervalId: currentResourcePlanIntervalId, status: 'NEW', cells: {}}; state.savedWorkingPlanRows = workingPlan.savedRows; state.hasSavedWorkingPlan = workingPlan.hasSaved;
                 renderTableStructure(saved.rows); renderWorkingPlanTable(workingPlan.rows); renderChart();
             }
