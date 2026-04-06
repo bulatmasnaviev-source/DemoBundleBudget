@@ -24,6 +24,7 @@ use KimaiPlugin\DemoBundle\Report\DemoReportQuery;
 use KimaiPlugin\DemoBundle\Repository\BudgetPlanStorage;
 use KimaiPlugin\DemoBundle\Repository\DemoRepository;
 use KimaiPlugin\DemoBundle\Repository\ResourcePlanStorage;
+use KimaiPlugin\DemoBundle\Repository\WorkingPlanStorage;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -34,7 +35,7 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 #[IsGranted('demo')]
 final class DemoController extends AbstractController
 {
-    public function __construct(private DemoRepository $repository, private DemoConfiguration $configuration, private EntityManagerInterface $entityManager, private BudgetPlanStorage $budgetPlanStorage, private ResourcePlanStorage $resourcePlanStorage)
+    public function __construct(private DemoRepository $repository, private DemoConfiguration $configuration, private EntityManagerInterface $entityManager, private BudgetPlanStorage $budgetPlanStorage, private ResourcePlanStorage $resourcePlanStorage, private WorkingPlanStorage $workingPlanStorage)
     {
     }
 
@@ -238,8 +239,37 @@ final class DemoController extends AbstractController
         $cells = \is_array($payload['cells'] ?? null) ? $payload['cells'] : [];
 
         $this->resourcePlanStorage->saveByIntervalId($intervalId, $status, $cells);
+        if ($status === 'APPROVED') {
+            $this->syncWorkingPlansFromApprovedResourcePlan($intervalId, $cells);
+        }
 
         return new JsonResponse(['status' => $status, 'cells' => $cells]);
+    }
+
+    #[Route(path: '/working-plan/{project}', name: 'demo_working_plan_get', methods: ['GET'])]
+    public function getWorkingPlan(Project $project): JsonResponse
+    {
+        $saved = $this->workingPlanStorage->loadByProjectId((int) $project->getId());
+        $savedRows = \is_array($saved['rows'] ?? null) ? $saved['rows'] : null;
+
+        return new JsonResponse([
+            'rows' => $savedRows ?? $this->buildDefaultWorkingPlanRows($project),
+            'savedRows' => $savedRows,
+            'hasSaved' => $savedRows !== null,
+        ]);
+    }
+
+    #[Route(path: '/working-plan/{project}', name: 'demo_working_plan_save', methods: ['POST'])]
+    public function saveWorkingPlan(Request $request, Project $project): JsonResponse
+    {
+        $payload = json_decode($request->getContent(), true);
+        $rows = \is_array($payload['rows'] ?? null) ? $payload['rows'] : [];
+
+        $this->workingPlanStorage->saveByProjectId((int) $project->getId(), $rows);
+
+        return new JsonResponse([
+            'rows' => $rows,
+        ]);
     }
 
     #[Route(path: '/budget-plan/{project}', name: 'demo_budget_plan_get', methods: ['GET'])]
@@ -295,21 +325,24 @@ final class DemoController extends AbstractController
     #[Route(path: '/budget-plan/{project}/actual-costs', name: 'demo_budget_plan_actual_costs', methods: ['GET'])]
     public function getActualCosts(Project $project): JsonResponse
     {
+        return new JsonResponse($this->buildActualCostData($project));
+    }
+
+    private function buildActualCostData(Project $project): array
+    {
         $start = method_exists($project, 'getStart') ? $project->getStart() : null;
         $end = method_exists($project, 'getEnd') ? $project->getEnd() : null;
 
         if (!$start instanceof \DateTimeInterface || !$end instanceof \DateTimeInterface || $start > $end) {
-            return new JsonResponse(['weeks' => [], 'matrix' => []]);
+            return ['weeks' => [], 'matrix' => []];
         }
 
         $periodStart = (new \DateTimeImmutable($start->format('Y-m-d')))->modify('monday this week')->modify('-1 week')->setTime(0, 0, 0);
         $periodEnd = (new \DateTimeImmutable($end->format('Y-m-d')))->modify('sunday this week')->modify('+2 week')->setTime(23, 59, 59);
 
         $weeks = [];
-        $cursor = $periodStart;
-        while ($cursor <= $periodEnd) {
+        for ($cursor = $periodStart; $cursor <= $periodEnd; $cursor = $cursor->modify('+1 week')) {
             $weeks[] = $cursor;
-            $cursor = $cursor->modify('+1 week');
         }
 
         $indexByWeekStart = [];
@@ -319,7 +352,6 @@ final class DemoController extends AbstractController
 
         $matrix = [];
         $approvedWeekMap = $this->getApprovedWeekMap($periodStart, $periodEnd);
-
         $timesheets = $this->entityManager->getRepository(Timesheet::class)->createQueryBuilder('t')
             ->andWhere('t.project = :project')
             ->andWhere('t.begin >= :begin')
@@ -344,23 +376,12 @@ final class DemoController extends AbstractController
             if (\is_array($approvedWeekMap) && !isset($approvedWeekMap[$userId . '|' . $weekStart])) {
                 continue;
             }
+
             $weekIndex = $indexByWeekStart[$weekStart];
-
-            $duration = max(0, (int) $timesheet->getDuration());
-            $entryHours = $duration / 3600;
-
-            if (!isset($matrix[$userId])) {
-                $matrix[$userId] = [];
-            }
-
-            if (!isset($matrix[$userId][$weekIndex])) {
-                $matrix[$userId][$weekIndex] = 0.0;
-            }
-
-            $matrix[$userId][$weekIndex] += (float) $entryHours;
+            $matrix[$userId][$weekIndex] = ($matrix[$userId][$weekIndex] ?? 0.0) + (max(0, (int) $timesheet->getDuration()) / 3600);
         }
 
-        return new JsonResponse([
+        return [
             'weeks' => array_map(static function (\DateTimeImmutable $weekStart): array {
                 return [
                     'start' => $weekStart->format('Y-m-d'),
@@ -368,7 +389,266 @@ final class DemoController extends AbstractController
                 ];
             }, $weeks),
             'matrix' => $matrix,
-        ]);
+        ];
+    }
+
+    private function buildDefaultWorkingPlanRows(Project $project): array
+    {
+        $intervals = $this->buildAlignedBiweeklyIntervals($project);
+        $currentBiweeklyIndex = $this->findCurrentBiweeklyIndex($intervals);
+        $basePlanData = $this->budgetPlanStorage->loadByProjectId((int) $project->getId());
+        $baseRows = \is_array($basePlanData['rows'] ?? null) ? $basePlanData['rows'] : [];
+        $actualCostData = $this->buildActualCostData($project);
+        $actualWeeks = \is_array($actualCostData['weeks'] ?? null) ? $actualCostData['weeks'] : [];
+        $actualMatrix = \is_array($actualCostData['matrix'] ?? null) ? $actualCostData['matrix'] : [];
+        $currentIntervalId = ($currentBiweeklyIndex >= 0 && $currentBiweeklyIndex < \count($intervals)) ? (string) ($intervals[$currentBiweeklyIndex]['resourcePlanId'] ?? '') : '';
+        $currentResourcePlan = $currentIntervalId !== '' ? $this->resourcePlanStorage->loadByIntervalId($currentIntervalId) : null;
+        $isCurrentResourcePlanApproved = \is_array($currentResourcePlan) && $this->normalizeResourcePlanStatus((string) ($currentResourcePlan['status'] ?? 'NEW')) === 'APPROVED';
+        $currentResourceCells = \is_array($currentResourcePlan['cells'] ?? null) ? $currentResourcePlan['cells'] : [];
+
+        $baseRowsByEmployee = [];
+        $employeeIds = [];
+        foreach ($baseRows as $row) {
+            if (!\is_array($row) || !isset($row['employeeId'])) {
+                continue;
+            }
+
+            $employeeId = (string) $row['employeeId'];
+            $employeeIds[$employeeId] = true;
+            $baseRowsByEmployee[$employeeId] = \is_array($row['hours'] ?? null) ? $row['hours'] : [];
+        }
+
+        foreach (array_keys($actualMatrix) as $employeeId) {
+            $employeeIds[(string) $employeeId] = true;
+        }
+
+        if ($isCurrentResourcePlanApproved && $currentIntervalId !== '') {
+            $projectPrefix = $currentIntervalId . '::' . $project->getId() . '::';
+            foreach (array_keys($currentResourceCells) as $cellKey) {
+                if (str_starts_with((string) $cellKey, $projectPrefix)) {
+                    $employeeIds[substr((string) $cellKey, \strlen($projectPrefix))] = true;
+                }
+            }
+        }
+
+        $employeeOrder = array_map(static fn (array $employee): string => (string) $employee['id'], $this->buildEmployeeData());
+        $employeeIdList = array_keys($employeeIds);
+        usort($employeeIdList, static function (string $a, string $b) use ($employeeOrder): int {
+            $rankA = array_search($a, $employeeOrder, true);
+            $rankB = array_search($b, $employeeOrder, true);
+
+            return ($rankA === false ? PHP_INT_MAX : $rankA) <=> ($rankB === false ? PHP_INT_MAX : $rankB) ?: strcmp($a, $b);
+        });
+
+        $actualWeekIndexByStart = [];
+        foreach ($actualWeeks as $index => $week) {
+            if (\is_array($week) && isset($week['start'])) {
+                $actualWeekIndexByStart[(string) $week['start']] = $index;
+            }
+        }
+
+        $rows = [];
+        foreach ($employeeIdList as $employeeId) {
+            $hours = [];
+            foreach ($intervals as $intervalIndex => $_interval) {
+                $hours[] = (string) $this->resolveWorkingPlanHoursForInterval(
+                    $project,
+                    $employeeId,
+                    $intervalIndex,
+                    $intervals,
+                    $currentBiweeklyIndex,
+                    $isCurrentResourcePlanApproved,
+                    $baseRowsByEmployee,
+                    $actualWeekIndexByStart,
+                    $actualMatrix,
+                    $currentResourceCells
+                );
+            }
+
+            $rows[] = ['employeeId' => $employeeId, 'hours' => $hours];
+        }
+
+        return $rows;
+    }
+
+    private function resolveWorkingPlanHoursForInterval(Project $project, string $employeeId, int $intervalIndex, array $intervals, int $currentBiweeklyIndex, bool $isCurrentResourcePlanApproved, array $baseRowsByEmployee, array $actualWeekIndexByStart, array $actualMatrix, array $currentResourceCells): float
+    {
+        if ($currentBiweeklyIndex >= 0 && $intervalIndex < $currentBiweeklyIndex) {
+            $intervalStart = \DateTimeImmutable::createFromFormat('Y-m-d', (string) ($intervals[$intervalIndex]['start'] ?? ''));
+            if (!$intervalStart instanceof \DateTimeImmutable) {
+                return 0.0;
+            }
+
+            $firstWeekStart = $intervalStart->modify('monday this week')->format('Y-m-d');
+            $secondWeekStart = $intervalStart->modify('monday this week')->modify('+7 days')->format('Y-m-d');
+
+            return round(
+                (float) ($actualMatrix[$employeeId][$actualWeekIndexByStart[$firstWeekStart] ?? -1] ?? 0)
+                + (float) ($actualMatrix[$employeeId][$actualWeekIndexByStart[$secondWeekStart] ?? -1] ?? 0),
+                1
+            );
+        }
+
+        if ($currentBiweeklyIndex >= 0 && $intervalIndex === $currentBiweeklyIndex && $isCurrentResourcePlanApproved) {
+            $intervalId = (string) ($intervals[$intervalIndex]['resourcePlanId'] ?? '');
+
+            return round((float) ($currentResourceCells[$intervalId . '::' . $project->getId() . '::' . $employeeId] ?? 0), 1);
+        }
+
+        return round((float) ($baseRowsByEmployee[$employeeId][$intervalIndex] ?? 0), 1);
+    }
+
+    private function buildAlignedBiweeklyIntervals(Project $project): array
+    {
+        $start = method_exists($project, 'getStart') ? $project->getStart() : null;
+        $end = method_exists($project, 'getEnd') ? $project->getEnd() : null;
+
+        if (!$start instanceof \DateTimeInterface || !$end instanceof \DateTimeInterface || $start > $end) {
+            return [];
+        }
+
+        $rangeStart = (new \DateTimeImmutable($start->format('Y-m-d')))->modify('monday this week')->modify('-14 days')->setTime(0, 0, 0);
+        $rangeEnd = (new \DateTimeImmutable($end->format('Y-m-d')))->modify('sunday this week')->modify('+14 days')->setTime(23, 59, 59);
+        $cursor = (new \DateTimeImmutable($start->format('Y-01-01')))->modify('monday this week')->setTime(0, 0, 0);
+        $intervals = [];
+
+        while ($cursor <= $rangeEnd) {
+            $intervalStart = $cursor;
+            $intervalEnd = $cursor->modify('+13 days')->setTime(23, 59, 59);
+
+            if ($intervalEnd >= $rangeStart) {
+                $intervals[] = [
+                    'start' => $intervalStart->format('Y-m-d'),
+                    'resourcePlanId' => $intervalStart->format('Y-m-d'),
+                ];
+            }
+
+            $cursor = $cursor->modify('+14 days');
+        }
+
+        return $intervals;
+    }
+
+    private function findCurrentBiweeklyIndex(array $intervals): int
+    {
+        if ($intervals === []) {
+            return -1;
+        }
+
+        $now = new \DateTimeImmutable('today 12:00:00');
+        foreach ($intervals as $index => $interval) {
+            $start = \DateTimeImmutable::createFromFormat('Y-m-d', (string) ($interval['start'] ?? ''));
+            if (!$start instanceof \DateTimeImmutable) {
+                continue;
+            }
+
+            $start = $start->setTime(0, 0, 0);
+            $end = $start->modify('+13 days')->setTime(23, 59, 59);
+            if ($now >= $start && $now <= $end) {
+                return $index;
+            }
+        }
+
+        $firstStart = \DateTimeImmutable::createFromFormat('Y-m-d', (string) ($intervals[0]['start'] ?? ''));
+        if ($firstStart instanceof \DateTimeImmutable && $now < $firstStart->setTime(0, 0, 0)) {
+            return 0;
+        }
+
+        return \count($intervals);
+    }
+
+    private function syncWorkingPlansFromApprovedResourcePlan(string $intervalId, array $cells): void
+    {
+        $projectEmployeeHours = [];
+        $prefix = $intervalId . '::';
+
+        foreach ($cells as $cellKey => $value) {
+            if (!\is_string($cellKey) || !str_starts_with($cellKey, $prefix)) {
+                continue;
+            }
+
+            $parts = explode('::', $cellKey);
+            if (\count($parts) !== 3) {
+                continue;
+            }
+
+            [, $projectId, $employeeId] = $parts;
+            if ($projectId === '__base__' || $projectId === '__projects__' || $projectId === '__project_snapshots__') {
+                continue;
+            }
+
+            $projectEmployeeHours[(string) $projectId][(string) $employeeId] = (string) $value;
+        }
+
+        if ($projectEmployeeHours === []) {
+            return;
+        }
+
+        $projectRepository = $this->entityManager->getRepository(Project::class);
+        foreach ($projectEmployeeHours as $projectId => $employeeHours) {
+            $project = $projectRepository->find((int) $projectId);
+            if (!$project instanceof Project) {
+                continue;
+            }
+
+            $intervals = $this->buildAlignedBiweeklyIntervals($project);
+            $intervalIndex = null;
+            foreach ($intervals as $index => $interval) {
+                if ((string) ($interval['resourcePlanId'] ?? '') === $intervalId) {
+                    $intervalIndex = $index;
+                    break;
+                }
+            }
+
+            if ($intervalIndex === null) {
+                continue;
+            }
+
+            $saved = $this->workingPlanStorage->loadByProjectId((int) $project->getId());
+            $rows = \is_array($saved['rows'] ?? null) ? $saved['rows'] : $this->buildDefaultWorkingPlanRows($project);
+            $rowsByEmployee = [];
+
+            foreach ($rows as $row) {
+                if (!\is_array($row) || !isset($row['employeeId'])) {
+                    continue;
+                }
+
+                $employeeId = (string) $row['employeeId'];
+                $hours = \is_array($row['hours'] ?? null) ? array_values($row['hours']) : [];
+                if (!isset($hours[$intervalIndex])) {
+                    $hours = array_pad($hours, \count($intervals), '0');
+                }
+                $hours[$intervalIndex] = '0';
+                $rowsByEmployee[$employeeId] = [
+                    'employeeId' => $employeeId,
+                    'hours' => $hours,
+                ];
+            }
+
+            foreach ($employeeHours as $employeeId => $hours) {
+                if (!isset($rowsByEmployee[$employeeId])) {
+                    $rowsByEmployee[$employeeId] = [
+                        'employeeId' => $employeeId,
+                        'hours' => array_fill(0, \count($intervals), '0'),
+                    ];
+                }
+
+                $rowsByEmployee[$employeeId]['hours'][$intervalIndex] = (string) $hours;
+            }
+
+            $orderedEmployeeIds = array_map(static fn (array $employee): string => (string) $employee['id'], $this->buildEmployeeData());
+            $normalizedRows = array_values($rowsByEmployee);
+            usort($normalizedRows, static function (array $left, array $right) use ($orderedEmployeeIds): int {
+                $leftId = (string) ($left['employeeId'] ?? '');
+                $rightId = (string) ($right['employeeId'] ?? '');
+                $leftRank = array_search($leftId, $orderedEmployeeIds, true);
+                $rightRank = array_search($rightId, $orderedEmployeeIds, true);
+
+                return ($leftRank === false ? PHP_INT_MAX : $leftRank) <=> ($rightRank === false ? PHP_INT_MAX : $rightRank) ?: strcmp($leftId, $rightId);
+            });
+
+            $this->workingPlanStorage->saveByProjectId((int) $project->getId(), $normalizedRows);
+        }
     }
 
 
