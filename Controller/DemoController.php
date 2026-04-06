@@ -80,6 +80,7 @@ final class DemoController extends AbstractController
                 'start' => $start instanceof \DateTimeInterface ? $start->format('Y-m-d') : null,
                 'end' => $end instanceof \DateTimeInterface ? $end->format('Y-m-d') : null,
                 'budget' => is_numeric($budget) ? (float) $budget : 0.0,
+                'assignedEmployeeIds' => $this->buildAssignedEmployeeIds($project),
             ];
         }
 
@@ -169,6 +170,37 @@ final class DemoController extends AbstractController
         }
 
         return $employees;
+    }
+
+    private function buildAssignedEmployeeIds(Project $project): array
+    {
+        if (!method_exists($project, 'getTeams')) {
+            return [];
+        }
+
+        $employeeIds = [];
+        foreach ($project->getTeams() as $team) {
+            if (!\is_object($team)) {
+                continue;
+            }
+
+            $members = [];
+            if (method_exists($team, 'getUsers')) {
+                $members = $team->getUsers();
+            } elseif (method_exists($team, 'getMembers')) {
+                $members = $team->getMembers();
+            }
+
+            foreach ($members as $member) {
+                if (!\is_object($member) || !method_exists($member, 'getId')) {
+                    continue;
+                }
+
+                $employeeIds[(string) $member->getId()] = (int) $member->getId();
+            }
+        }
+
+        return array_values($employeeIds);
     }
 
     private function buildActiveProjects(): array

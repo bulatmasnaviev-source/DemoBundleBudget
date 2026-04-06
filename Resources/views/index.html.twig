@@ -60,9 +60,12 @@
                 </div>
             </div>
 
+            <div class="border-top border-bottom py-2 mb-3">
+                <h4 class="fs-4 fw-bold mb-2">Базовый план</h4>
             <div class="d-flex align-items-center gap-2 mb-2">
                 <strong>Статус базового плана:</strong>
                 <span id="planStatusLabel" class="fw-bold">Новый</span>
+            </div>
             </div>
 
             <div class="d-flex flex-wrap gap-2 mb-3">
@@ -155,6 +158,82 @@
             const actualTableHead = document.getElementById('actualTableHead');
             const actualTableBody = document.getElementById('actualTableBody');
             const actualSummaryRow = document.getElementById('actualSummaryRow');
+
+            function createSectionTitle(text) {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'border-top border-bottom py-2 mb-3';
+                const title = document.createElement('h4');
+                title.className = 'fs-4 fw-bold mb-0';
+                title.textContent = text;
+                wrapper.appendChild(title);
+
+                return wrapper;
+            }
+
+            function setupManagementLayout() {
+                addRowButton.textContent = '+ Сотрудник';
+                addWorkingRowButton.textContent = '+ Сотрудник';
+
+                const statusRow = planStatusLabel.parentElement;
+                const statusContainer = statusRow?.parentElement;
+                if (statusRow && statusContainer && !statusContainer.classList.contains('border-top')) {
+                    const section = document.createElement('div');
+                    section.className = 'border-top border-bottom py-2 mb-3';
+                    const title = document.createElement('h4');
+                    title.className = 'fs-4 fw-bold mb-2';
+                    title.textContent = 'Базовый план';
+                    section.appendChild(title);
+                    section.appendChild(statusRow);
+                    statusContainer.parentElement?.insertBefore(section, statusContainer);
+                    statusContainer.remove();
+                }
+
+                const approvalRow = document.getElementById('sendForApprovalButton')?.parentElement;
+                if (approvalRow && addRowButton.parentElement !== approvalRow) {
+                    approvalRow.appendChild(addRowButton);
+                }
+
+                const workingButtonRow = saveWorkingPlanButton.parentElement;
+                if (workingButtonRow) {
+                    workingButtonRow.className = 'd-flex flex-wrap gap-2 mb-3';
+
+                    [saveWorkingPlanButton, rebuildWorkingPlanChartButton, loadSavedWorkingPlanButton, sendToResourcePlanButton].forEach((button) => {
+                        button.className = 'btn btn-outline-dark working-plan-action';
+                        button.style.width = '15rem';
+                    });
+
+                    const workingTitle = createSectionTitle('Рабочий план');
+                    workingButtonRow.parentElement?.insertBefore(workingTitle, workingButtonRow);
+
+                    const addWorkingRow = document.createElement('div');
+                    addWorkingRow.className = 'd-flex flex-wrap gap-2 mb-3';
+                    addWorkingRow.appendChild(addWorkingRowButton);
+                    workingButtonRow.insertAdjacentElement('afterend', addWorkingRow);
+                }
+
+                const comparisonSection = chartSvg.closest('.mt-4');
+                if (comparisonSection) {
+                    comparisonSection.classList.add('pt-2');
+                    const title = comparisonSection.querySelector('h4');
+                    if (title) {
+                        title.className = 'fs-4 fw-bold mb-2';
+                        title.textContent = 'Сравнение базового плана и фактического расхода бюджета';
+                    }
+
+                    const legend = comparisonSection.querySelector('.small');
+                    if (legend && !legend.querySelector('[data-chart-legend="green"]')) {
+                        const greenLegend = document.createElement('span');
+                        greenLegend.className = 'ms-3';
+                        greenLegend.dataset.chartLegend = 'green';
+                        greenLegend.style.color = '#2fb344';
+                        greenLegend.textContent = '● Зеленая линия — ресурсный план';
+                        legend.appendChild(greenLegend);
+                    }
+                }
+            }
+
+            setupManagementLayout();
+
             const resourcePlanSummaryRow = (() => {
                 const row = document.createElement('tr');
                 row.id = 'resourcePlanSummaryRow';
@@ -579,7 +658,10 @@
                 renderHeaders(); tableBody.innerHTML = '';
                 const rows = Array.isArray(rowsFromStorage) ? rowsFromStorage : [];
                 if (rows.length === 0) {
-                    for (let i=0;i<3;i++) createRow(employees[i] ? employees[i].id : null);
+                    const assignedEmployeeIds = Array.isArray(state.activeProject?.assignedEmployeeIds) && state.activeProject.assignedEmployeeIds.length > 0
+                        ? state.activeProject.assignedEmployeeIds
+                        : employees.slice(0, 3).map((employee) => employee.id);
+                    assignedEmployeeIds.forEach((employeeId) => createRow(employeeId));
                 } else {
                     rows.forEach((row) => createRow(row.employeeId ?? null, Array.isArray(row.hours) ? row.hours : []));
                 }
