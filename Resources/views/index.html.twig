@@ -622,7 +622,7 @@
 
                 const buildPolyline = (pts, color) => `<polyline fill="none" stroke="${color}" stroke-width="2" points="${pts.map((pt) => `${pt.x},${pt.y}`).join(' ')}" />`;
 
-                const xLabels = [...state.weeks.map((week) => week.label), ''];
+                const xLabels = ['', ...state.weeks.map((week) => week.label)];
                 const buildAxisLabel = (pt, label) => {
                     const lines = String(label || '').split('\n');
                     return `<text x="${pt.x}" y="${h - p.bottom + 18}" text-anchor="middle" font-size="11">${lines.map((line, index) => `<tspan x="${pt.x}" dy="${index === 0 ? 0 : 12}">${line}</tspan>`).join('')}</text>`;
