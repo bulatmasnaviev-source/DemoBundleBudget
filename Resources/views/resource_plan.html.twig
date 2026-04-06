@@ -64,6 +64,7 @@
                 employee: '8rem',
                 total: '8rem',
                 cost: '10rem',
+                actions: '5rem',
             };
 
             const planningIntervalSelect = document.getElementById('planningIntervalSelect');
@@ -269,6 +270,9 @@
                 resourcePlanBody.querySelectorAll('.resource-hour-input').forEach((input) => {
                     input.disabled = locked;
                 });
+                resourcePlanBody.querySelectorAll('.resource-remove-button').forEach((button) => {
+                    button.disabled = locked;
+                });
             }
 
             function calculateColumnTotals(intervalId) {
@@ -302,6 +306,10 @@
                 applyCellWidth(summaryCostEnd, COLUMN_WIDTH.cost);
                 summaryCostEnd.textContent = '—';
                 summaryRow.appendChild(summaryCostEnd);
+                const summaryActionsEnd = document.createElement('td');
+                applyCellWidth(summaryActionsEnd, COLUMN_WIDTH.actions);
+                summaryActionsEnd.textContent = '';
+                summaryRow.appendChild(summaryActionsEnd);
                 resourcePlanFoot.appendChild(summaryRow);
 
                 const reserveRow = document.createElement('tr');
@@ -333,6 +341,10 @@
                 applyCellWidth(reserveCostEnd, COLUMN_WIDTH.cost);
                 reserveCostEnd.textContent = '—';
                 reserveRow.appendChild(reserveCostEnd);
+                const reserveActionsEnd = document.createElement('td');
+                applyCellWidth(reserveActionsEnd, COLUMN_WIDTH.actions);
+                reserveActionsEnd.textContent = '';
+                reserveRow.appendChild(reserveActionsEnd);
                 resourcePlanFoot.appendChild(reserveRow);
             }
 
@@ -456,6 +468,10 @@
                 costHeader.textContent = 'Затраты';
                 applyCellWidth(costHeader, COLUMN_WIDTH.cost);
                 headerRow.appendChild(costHeader);
+                const actionsHeader = document.createElement('th');
+                actionsHeader.textContent = 'Действия';
+                applyCellWidth(actionsHeader, COLUMN_WIDTH.actions);
+                headerRow.appendChild(actionsHeader);
                 resourcePlanHead.appendChild(headerRow);
 
                 const intervalId = getIntervalId();
@@ -480,6 +496,10 @@
                 applyCellWidth(rateCost, COLUMN_WIDTH.cost);
                 rateCost.textContent = '—';
                 rateRow.appendChild(rateCost);
+                const rateActions = document.createElement('td');
+                applyCellWidth(rateActions, COLUMN_WIDTH.actions);
+                rateActions.textContent = '';
+                rateRow.appendChild(rateActions);
                 resourcePlanHead.appendChild(rateRow);
 
                 const baseRow = document.createElement('tr');
@@ -502,6 +522,10 @@
                 applyCellWidth(baseCost, COLUMN_WIDTH.cost);
                 baseCost.textContent = '—';
                 baseRow.appendChild(baseCost);
+                const baseActions = document.createElement('td');
+                applyCellWidth(baseActions, COLUMN_WIDTH.actions);
+                baseActions.textContent = '';
+                baseRow.appendChild(baseActions);
                 resourcePlanHead.appendChild(baseRow);
 
                 state.projects.forEach((project) => {
@@ -535,6 +559,10 @@
                     applyCellWidth(costCell, COLUMN_WIDTH.cost);
                     costCell.textContent = String(Math.round(rowCost * 10) / 10);
                     tr.appendChild(costCell);
+                    const actionsCell = document.createElement('td');
+                    applyCellWidth(actionsCell, COLUMN_WIDTH.actions);
+                    actionsCell.innerHTML = `<button type="button" class="btn btn-sm btn-danger resource-remove-button" data-project-id="${project.id}" title="Удалить строку">Х</button>`;
+                    tr.appendChild(actionsCell);
                     resourcePlanBody.appendChild(tr);
                 });
 
@@ -650,6 +678,24 @@
                 state.dirty = true;
                 updateRowTotal(event.target.closest('tr'));
                 renderFooter(intervalId);
+                scheduleAutosave();
+            });
+
+            resourcePlanBody.addEventListener('click', function (event) {
+                const button = event.target.closest('.resource-remove-button');
+                if (!(button instanceof HTMLButtonElement) || button.disabled) {
+                    return;
+                }
+
+                const projectId = String(button.dataset.projectId || '');
+                if (projectId === '') {
+                    return;
+                }
+
+                state.projects = state.projects.filter((project) => String(project.id) !== projectId);
+                syncProjectOrderToCells(getIntervalId());
+                state.dirty = true;
+                renderTable();
                 scheduleAutosave();
             });
 
