@@ -21,14 +21,16 @@
             </div>
 
             <div class="d-flex flex-wrap gap-2 mb-3">
-                <button id="resourcePlanSendButton" type="button" class="btn btn-secondary">Отправить</button>
-                <button id="resourcePlanEditButton" type="button" class="btn btn-warning">Редактировать</button>
-                <button id="resourcePlanApproveButton" type="button" class="btn btn-success">Согласовать</button>
+                <button id="resourcePlanSaveButton" type="button" class="btn btn-outline-dark resource-plan-action">Сохранить</button>
+                <button id="resourcePlanEditButton" type="button" class="btn btn-outline-dark resource-plan-action">Редактировать</button>
+                <button id="resourcePlanReloadButton" type="button" class="btn btn-outline-dark resource-plan-action">Последний сохраненный Рес.План</button>
+                <button id="resourcePlanApproveButton" type="button" class="btn btn-outline-dark resource-plan-action">Утвердить</button>
             </div>
 
             <div class="mb-3">
                 <strong>Статус:</strong>
                 <span id="resourcePlanStatusLabel" class="fw-bold">Новое</span>
+                <div class="mt-2 text-muted">*Часы по проектам указаны в формате План/Факт</div>
             </div>
 
             <div class="table-responsive">
@@ -75,11 +77,16 @@
             const resourcePlanBody = document.getElementById('resourcePlanBody');
             const resourcePlanFoot = document.getElementById('resourcePlanFoot');
             const statusLabel = document.getElementById('resourcePlanStatusLabel');
-            const sendButton = document.getElementById('resourcePlanSendButton');
+            const saveButton = document.getElementById('resourcePlanSaveButton');
             const editButton = document.getElementById('resourcePlanEditButton');
+            const reloadButton = document.getElementById('resourcePlanReloadButton');
             const approveButton = document.getElementById('resourcePlanApproveButton');
             const state = {intervals: [], projects: [...initialProjects], cells: {}, actualCells: {}, status: 'NEW', dirty: false, saveTimer: null, savePromise: null};
             const employeeRateMap = new Map(employees.map((employee) => [String(employee.id), Number(employee.hourlyRate || 0)]));
+
+            document.querySelectorAll('.resource-plan-action').forEach((button) => {
+                button.style.width = '15rem';
+            });
 
             function applyCellWidth(cell, width) {
                 cell.style.width = width;
@@ -407,41 +414,9 @@
                 return payload;
             }
 
-            function scheduleAutosave() {
-                if (state.saveTimer !== null) {
-                    clearTimeout(state.saveTimer);
-                }
+            function scheduleAutosave() {}
 
-                state.saveTimer = window.setTimeout(() => {
-                    state.saveTimer = null;
-                    state.savePromise = persistInterval(getIntervalId(), state.status, {...state.cells}, false)
-                        .catch(() => {
-                            state.dirty = true;
-                        })
-                        .finally(() => {
-                            state.savePromise = null;
-                        });
-                }, 400);
-            }
-
-            async function flushAutosave() {
-                if (state.saveTimer !== null) {
-                    clearTimeout(state.saveTimer);
-                    state.saveTimer = null;
-                    state.savePromise = persistInterval(getIntervalId(), state.status, {...state.cells}, false)
-                        .catch((error) => {
-                            state.dirty = true;
-                            throw error;
-                        })
-                        .finally(() => {
-                            state.savePromise = null;
-                        });
-                }
-
-                if (state.savePromise) {
-                    await state.savePromise;
-                }
-            }
+            async function flushAutosave() {}
 
             function renderTable() {
                 resourcePlanHead.innerHTML = '';
@@ -662,7 +637,6 @@
                 resourceProjectPicker.value = '';
                 state.dirty = true;
                 renderTable();
-                scheduleAutosave();
             });
 
             resourcePlanBody.addEventListener('input', function (event) {
@@ -678,7 +652,6 @@
                 state.dirty = true;
                 updateRowTotal(event.target.closest('tr'));
                 renderFooter(intervalId);
-                scheduleAutosave();
             });
 
             resourcePlanBody.addEventListener('click', function (event) {
@@ -696,7 +669,6 @@
                 syncProjectOrderToCells(getIntervalId());
                 state.dirty = true;
                 renderTable();
-                scheduleAutosave();
             });
 
             resourcePlanHead.addEventListener('input', function (event) {
@@ -709,15 +681,19 @@
                 state.cells[getBaseCellKey(intervalId, employeeId)] = event.target.value;
                 state.dirty = true;
                 renderFooter(intervalId);
-                scheduleAutosave();
             });
 
-            sendButton.addEventListener('click', function () {
+            saveButton.addEventListener('click', function () {
                 saveInterval('DISCUSSION');
             });
 
             editButton.addEventListener('click', function () {
-                saveInterval('CORRECTING');
+                setStatus('CORRECTING');
+                state.dirty = true;
+            });
+
+            reloadButton.addEventListener('click', function () {
+                loadInterval(getIntervalId());
             });
 
             approveButton.addEventListener('click', function () {
