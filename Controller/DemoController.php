@@ -299,6 +299,46 @@ final class DemoController extends AbstractController
         ]);
     }
 
+    #[Route(path: '/management-plan/{project}', name: 'demo_management_plan_get', methods: ['GET'])]
+    public function getManagementPlan(Project $project): JsonResponse
+    {
+        $budgetPlan = $this->budgetPlanStorage->loadByProjectId((int) $project->getId());
+        $budgetStatus = $this->normalizePlanStatus($budgetPlan['status'] ?? 'NEW');
+        $budgetRows = \is_array($budgetPlan['rows'] ?? null) ? $budgetPlan['rows'] : [];
+
+        $workingPlan = $this->workingPlanStorage->loadByProjectId((int) $project->getId());
+        $workingSavedRows = \is_array($workingPlan['rows'] ?? null) ? $workingPlan['rows'] : null;
+
+        $intervals = $this->buildAlignedBiweeklyIntervals($project);
+        $resourcePlans = [];
+        foreach ($intervals as $interval) {
+            $intervalId = (string) ($interval['resourcePlanId'] ?? '');
+            if ($intervalId === '') {
+                continue;
+            }
+
+            $data = $this->resourcePlanStorage->loadByIntervalId($intervalId);
+            $resourcePlans[$intervalId] = [
+                'intervalId' => $intervalId,
+                'status' => $this->normalizeResourcePlanStatus($data === null ? 'NEW' : (string) ($data['status'] ?? 'NEW')),
+                'cells' => $data === null || !\is_array($data['cells'] ?? null) ? [] : $data['cells'],
+            ];
+        }
+
+        return new JsonResponse([
+            'budgetPlan' => [
+                'status' => $budgetStatus,
+                'rows' => $budgetRows,
+            ],
+            'workingPlan' => [
+                'rows' => $workingSavedRows ?? $this->buildDefaultWorkingPlanRows($project),
+                'savedRows' => $workingSavedRows,
+                'hasSaved' => $workingSavedRows !== null,
+            ],
+            'resourcePlans' => $resourcePlans,
+        ]);
+    }
+
     #[Route(path: '/budget-plan/{project}', name: 'demo_budget_plan_get', methods: ['GET'])]
     public function getBudgetPlan(Project $project): JsonResponse
     {
