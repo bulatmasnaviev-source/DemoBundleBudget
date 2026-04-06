@@ -61,7 +61,7 @@
             </div>
 
             <div class="border-top border-bottom py-2 mb-3">
-                <h4 class="fs-4 fw-bold mb-2">Базовый план</h4>
+                <h4 class="display-6 fw-bold mb-2">Базовый план</h4>
             <div class="d-flex align-items-center gap-2 mb-2">
                 <strong>Статус базового плана:</strong>
                 <span id="planStatusLabel" class="fw-bold">Новый</span>
@@ -100,7 +100,7 @@
             </div>
 
             <div class="mt-4">
-                <h4 class="h5 mb-2">Сравнение базового плана и фактического расхода бюджета</h4>
+                <h4 class="display-6 fw-bold mb-2">Сравнение базового плана и фактического расхода бюджета</h4>
                 <div class="small mb-2">
                     <span style="color:#206bc4;">● Синяя линия — базовый план</span>
                     <span class="ms-3" style="color:#000000;">● Черная линия — рабочий план</span>
@@ -163,7 +163,7 @@
                 const wrapper = document.createElement('div');
                 wrapper.className = 'border-top border-bottom py-2 mb-3';
                 const title = document.createElement('h4');
-                title.className = 'fs-4 fw-bold mb-0';
+                title.className = 'display-6 fw-bold mb-0';
                 title.textContent = text;
                 wrapper.appendChild(title);
 
@@ -180,7 +180,7 @@
                     const section = document.createElement('div');
                     section.className = 'border-top border-bottom py-2 mb-3';
                     const title = document.createElement('h4');
-                    title.className = 'fs-4 fw-bold mb-2';
+                    title.className = 'display-6 fw-bold mb-2';
                     title.textContent = 'Базовый план';
                     section.appendChild(title);
                     section.appendChild(statusRow);
@@ -216,7 +216,7 @@
                     comparisonSection.classList.add('pt-2');
                     const title = comparisonSection.querySelector('h4');
                     if (title) {
-                        title.className = 'fs-4 fw-bold mb-2';
+                        title.className = 'display-6 fw-bold mb-2';
                         title.textContent = 'Сравнение базового плана и фактического расхода бюджета';
                     }
 

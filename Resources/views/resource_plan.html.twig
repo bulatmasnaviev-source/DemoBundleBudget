@@ -77,9 +77,44 @@
             const statusLabel = document.getElementById('resourcePlanStatusLabel');
             const sendButton = document.getElementById('resourcePlanSendButton');
             const editButton = document.getElementById('resourcePlanEditButton');
+            let reloadButton = document.getElementById('resourcePlanReloadButton');
             const approveButton = document.getElementById('resourcePlanApproveButton');
             const state = {intervals: [], projects: [...initialProjects], cells: {}, actualCells: {}, status: 'NEW', dirty: false, saveTimer: null, savePromise: null};
             const employeeRateMap = new Map(employees.map((employee) => [String(employee.id), Number(employee.hourlyRate || 0)]));
+
+            function setupResourcePlanActions() {
+                const buttonsRow = sendButton.parentElement;
+                if (buttonsRow && !reloadButton) {
+                    reloadButton = document.createElement('button');
+                    reloadButton.id = 'resourcePlanReloadButton';
+                    reloadButton.type = 'button';
+                    buttonsRow.insertBefore(reloadButton, approveButton);
+                }
+
+                const buttons = [sendButton, editButton, reloadButton, approveButton].filter(Boolean);
+                buttons.forEach((button) => {
+                    button.className = 'btn btn-outline-dark resource-plan-action';
+                    button.style.width = '15rem';
+                });
+
+                sendButton.textContent = 'Сохранить';
+                editButton.textContent = 'Редактировать';
+                if (reloadButton) {
+                    reloadButton.textContent = 'Последний сохраненный Рес.План';
+                }
+                approveButton.textContent = 'Утвердить';
+
+                const statusContainer = statusLabel.parentElement;
+                if (statusContainer && !statusContainer.querySelector('[data-resource-plan-hint]')) {
+                    const hint = document.createElement('div');
+                    hint.className = 'mt-2 text-muted';
+                    hint.dataset.resourcePlanHint = 'true';
+                    hint.textContent = '*Часы по проектам указаны в формате План/Факт';
+                    statusContainer.appendChild(hint);
+                }
+            }
+
+            setupResourcePlanActions();
 
             function applyCellWidth(cell, width) {
                 cell.style.width = width;
@@ -407,41 +442,9 @@
                 return payload;
             }
 
-            function scheduleAutosave() {
-                if (state.saveTimer !== null) {
-                    clearTimeout(state.saveTimer);
-                }
+            function scheduleAutosave() {}
 
-                state.saveTimer = window.setTimeout(() => {
-                    state.saveTimer = null;
-                    state.savePromise = persistInterval(getIntervalId(), state.status, {...state.cells}, false)
-                        .catch(() => {
-                            state.dirty = true;
-                        })
-                        .finally(() => {
-                            state.savePromise = null;
-                        });
-                }, 400);
-            }
-
-            async function flushAutosave() {
-                if (state.saveTimer !== null) {
-                    clearTimeout(state.saveTimer);
-                    state.saveTimer = null;
-                    state.savePromise = persistInterval(getIntervalId(), state.status, {...state.cells}, false)
-                        .catch((error) => {
-                            state.dirty = true;
-                            throw error;
-                        })
-                        .finally(() => {
-                            state.savePromise = null;
-                        });
-                }
-
-                if (state.savePromise) {
-                    await state.savePromise;
-                }
-            }
+            async function flushAutosave() {}
 
             function renderTable() {
                 resourcePlanHead.innerHTML = '';
@@ -662,7 +665,6 @@
                 resourceProjectPicker.value = '';
                 state.dirty = true;
                 renderTable();
-                scheduleAutosave();
             });
 
             resourcePlanBody.addEventListener('input', function (event) {
@@ -678,7 +680,6 @@
                 state.dirty = true;
                 updateRowTotal(event.target.closest('tr'));
                 renderFooter(intervalId);
-                scheduleAutosave();
             });
 
             resourcePlanBody.addEventListener('click', function (event) {
@@ -696,7 +697,6 @@
                 syncProjectOrderToCells(getIntervalId());
                 state.dirty = true;
                 renderTable();
-                scheduleAutosave();
             });
 
             resourcePlanHead.addEventListener('input', function (event) {
@@ -709,7 +709,6 @@
                 state.cells[getBaseCellKey(intervalId, employeeId)] = event.target.value;
                 state.dirty = true;
                 renderFooter(intervalId);
-                scheduleAutosave();
             });
 
             sendButton.addEventListener('click', function () {
@@ -717,7 +716,14 @@
             });
 
             editButton.addEventListener('click', function () {
-                saveInterval('CORRECTING');
+                setStatus('CORRECTING');
+                state.dirty = true;
+            });
+
+            if (reloadButton) {
+                reloadButton.addEventListener('click', function () {
+                    loadInterval(getIntervalId());
+                });
             });
 
             approveButton.addEventListener('click', function () {
