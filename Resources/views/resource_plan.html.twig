@@ -690,6 +690,7 @@
             editButton.addEventListener('click', function () {
                 setStatus('CORRECTING');
                 state.dirty = true;
+                renderTable();
             });
 
             reloadButton.addEventListener('click', function () {
