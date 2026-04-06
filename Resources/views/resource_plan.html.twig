@@ -53,7 +53,7 @@
             const statusUrlTemplate = '{{ path('demo_resource_plan_status', {'intervalId': 'INTERVAL_ID'}) }}';
 
             const STATUS = {
-                NEW: {label: 'Новое', locked: false, color: '#000000'},
+                NEW: {label: 'Новое', locked: true, color: '#000000'},
                 DISCUSSION: {label: 'К обсуждению', locked: true, color: '#6c757d'},
                 APPROVED: {label: 'Утвержден', locked: true, color: '#198754'},
                 CORRECTING: {label: 'Корректируется', locked: false, color: '#ffc107'},
