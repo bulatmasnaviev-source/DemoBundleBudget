@@ -7,7 +7,7 @@
         </div>
         <div class="card-body">
             <div class="mb-4">
-                <h4 class="fs-4 fw-bold mb-2">Активные проекты и статус базового плана</h4>
+                <h4 class="fs-4 fw-bold mb-2">Активные проекты и статус исходного плана</h4>
                 <div class="table-responsive" style="max-height: 27rem; overflow-y: auto;">
                     <table class="table table-sm table-bordered mb-0">
                         <thead>
@@ -61,9 +61,9 @@
             </div>
 
             <div class="border-top border-bottom py-2 mb-3">
-                <h4 class="display-6 fw-bold mb-2">Базовый план</h4>
+                <h4 class="display-6 fw-bold mb-2">Исходный план</h4>
             <div class="d-flex align-items-center gap-2 mb-2">
-                <strong>Статус базового плана:</strong>
+                <strong>Статус исходного плана:</strong>
                 <span id="planStatusLabel" class="fw-bold">Новый</span>
             </div>
             </div>
@@ -83,11 +83,11 @@
             </div>
 
             <div class="d-flex align-items-center gap-2 mt-3 flex-wrap">
-                <button id="addRowButton" type="button" class="btn btn-outline-primary">+ БП</button>
-                <button id="addWorkingRowButton" type="button" class="btn btn-outline-primary">+ РП</button>
-                <button id="saveWorkingPlanButton" type="button" class="btn btn-success">Сохранить РП</button>
+                <button id="addRowButton" type="button" class="btn btn-outline-primary">+ Сотрудник</button>
+                <button id="addWorkingRowButton" type="button" class="btn btn-outline-primary">+ Сотрудник</button>
+                <button id="saveWorkingPlanButton" type="button" class="btn btn-success">Сохранить Текущий план</button>
                 <button id="rebuildWorkingPlanChartButton" type="button" class="btn btn-secondary">Перестроить график</button>
-                <button id="loadSavedWorkingPlanButton" type="button" class="btn btn-outline-dark">Последний сохраненный РП</button>
+                <button id="loadSavedWorkingPlanButton" type="button" class="btn btn-outline-dark">Последний сохр. Текущий план</button>
                 <button id="sendToResourcePlanButton" type="button" class="btn btn-primary">Отправить на ресурсный план</button>
             </div>
 
@@ -100,10 +100,10 @@
             </div>
 
             <div class="mt-4">
-                <h4 class="display-6 fw-bold mb-2">Сравнение базового плана и фактического расхода бюджета</h4>
+                <h4 class="display-6 fw-bold mb-2">Сравнение Исходного, Текущего и Ресурсного планов</h4>
                 <div class="small mb-2">
-                    <span style="color:#206bc4;">● Синяя линия — базовый план</span>
-                    <span class="ms-3" style="color:#000000;">● Черная линия — рабочий план</span>
+                    <span style="color:#206bc4;">● Синяя линия — исходный план</span>
+                    <span class="ms-3" style="color:#000000;">● Черная линия — текущий план</span>
                 </div>
                 <div class="border rounded p-2" style="max-width: 1000px;">
                     <svg id="budgetChart" width="100%" height="360" viewBox="0 0 1000 360" preserveAspectRatio="xMinYMin meet" role="img" aria-label="График расходования бюджета"></svg>
@@ -136,7 +136,7 @@
                 REJECTED: {label: 'Отклонено', color: '#ffc107', locked: false}
             };
 
-            const state = {weeks: [], activeProject: null, activeBudget: 0, status: 'NEW', actualWeeks: [], actualMatrix: {}, actualTotals: [], resourcePlanTotals: [], actualOverrides: {}, currentResourcePlan: {intervalId: null, status: 'NEW', cells: {}}, resourcePlansByInterval: {}, workingPlanRows: [], savedWorkingPlanRows: null, hasSavedWorkingPlan: false};
+            const state = {weeks: [], additionalPeriods: 0, activeProject: null, activeBudget: 0, status: 'NEW', actualWeeks: [], actualMatrix: {}, actualTotals: [], resourcePlanTotals: [], actualOverrides: {}, currentResourcePlan: {intervalId: null, status: 'NEW', cells: {}}, resourcePlansByInterval: {}, workingPlanRows: [], savedWorkingPlanRows: null, hasSavedWorkingPlan: false};
             const employeeMap = new Map(employees.map((employee) => [String(employee.id), employee]));
 
             const projectSelect = document.getElementById('projectSelect');
@@ -170,11 +170,18 @@
                 return wrapper;
             }
 
+            function getRowsMaxLength(rows = []) {
+                return rows.reduce((maxLength, row) => {
+                    const rowLength = Array.isArray(row?.hours) ? row.hours.length : 0;
+                    return Math.max(maxLength, rowLength);
+                }, 0);
+            }
+
             function setupManagementLayout() {
                 addRowButton.textContent = '+ Сотрудник';
                 addWorkingRowButton.textContent = '+ Сотрудник';
-                saveWorkingPlanButton.textContent = 'Сохранить Рабочий план';
-                loadSavedWorkingPlanButton.textContent = 'Последний сохр. Рабочий план';
+                saveWorkingPlanButton.textContent = 'Сохранить Текущий план';
+                loadSavedWorkingPlanButton.textContent = 'Последний сохр. Текущий план';
 
                 const statusRow = planStatusLabel.parentElement;
                 const statusContainer = statusRow?.parentElement;
@@ -183,7 +190,7 @@
                     section.className = 'border-top border-bottom py-2 mb-3';
                     const title = document.createElement('h4');
                     title.className = 'display-6 fw-bold mb-2';
-                    title.textContent = 'Базовый план';
+                    title.textContent = 'Исходный план';
                     section.appendChild(title);
                     section.appendChild(statusRow);
                     statusContainer.parentElement?.insertBefore(section, statusContainer);
@@ -204,7 +211,7 @@
                         button.style.width = '15rem';
                     });
 
-                    const workingTitle = createSectionTitle('Рабочий план');
+                    const workingTitle = createSectionTitle('Текущий план');
                     workingButtonRow.parentElement?.insertBefore(workingTitle, workingButtonRow);
 
                     const addWorkingRow = document.createElement('div');
@@ -219,7 +226,7 @@
                     const title = comparisonSection.querySelector('h4');
                     if (title) {
                         title.className = 'display-6 fw-bold mb-2';
-                        title.textContent = 'Сравнение базового плана и фактического расхода бюджета';
+                        title.textContent = 'Сравнение Исходного, Текущего и Ресурсного планов';
                     }
 
                     const legend = comparisonSection.querySelector('.small');
@@ -231,6 +238,18 @@
                         greenLegend.textContent = '● Зеленая линия — ресурсный план';
                         legend.appendChild(greenLegend);
                     }
+                }
+
+                if (!document.getElementById('workingPlanPeriodControls')) {
+                    const controls = document.createElement('div');
+                    controls.id = 'workingPlanPeriodControls';
+                    controls.className = 'd-flex justify-content-end gap-2 mb-2';
+                    controls.innerHTML = `
+                        <button id="addPeriodButton" type="button" class="btn btn-outline-dark" style="width:2.5rem;height:2.5rem;padding:0;">+</button>
+                        <button id="removePeriodButton" type="button" class="btn btn-outline-dark" style="width:2.5rem;height:2.5rem;padding:0;">x</button>
+                    `;
+                    const actualTableContainer = actualTableHead.closest('.table-responsive');
+                    actualTableContainer?.parentElement?.insertBefore(controls, actualTableContainer);
                 }
             }
 
@@ -247,7 +266,7 @@
 
             actualSummaryRow.querySelector('th')?.setAttribute('colspan', '3');
             if (actualSummaryRow.querySelector('th')) {
-                actualSummaryRow.querySelector('th').textContent = 'Рабочий план (часы × ставка)';
+                actualSummaryRow.querySelector('th').textContent = 'Текущий план (часы × ставка)';
             }
             resourcePlanSummaryRow.querySelector('th')?.setAttribute('colspan', '3');
 
@@ -340,7 +359,28 @@
                 const startDate = parseLocalDate(state.activeProject.start); const endDate = parseLocalDate(state.activeProject.end);
                 if (!(startDate instanceof Date) || !(endDate instanceof Date)) return [];
                 if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || startDate > endDate) return [];
-                return buildAlignedBiweeklyIntervals(startDate, endDate);
+                const intervals = buildAlignedBiweeklyIntervals(startDate, endDate);
+                if (state.additionalPeriods <= 0 || intervals.length === 0) {
+                    return intervals;
+                }
+
+                const extended = [...intervals];
+                let lastStart = parseLocalDate(intervals[intervals.length - 1].start);
+                if (!(lastStart instanceof Date)) {
+                    return intervals;
+                }
+
+                for (let i = 0; i < state.additionalPeriods; i++) {
+                    lastStart = new Date(lastStart);
+                    lastStart.setDate(lastStart.getDate() + 14);
+                    extended.push({
+                        start: formatDateKey(lastStart),
+                        resourcePlanId: null,
+                        label: getTwoWeekLabel(lastStart),
+                    });
+                }
+
+                return extended;
             }
 
             function getCurrentBiweeklyIndex() {
@@ -396,7 +436,7 @@
 
             function getResourcePlanCostForInterval(interval, projectId) {
                 const resourcePlan = state.resourcePlansByInterval[String(interval?.resourcePlanId || '')];
-                if (!resourcePlan || resourcePlan.status !== 'APPROVED') {
+                if (!resourcePlan || !resourcePlan.intervalId || resourcePlan.status !== 'APPROVED') {
                     return null;
                 }
 
@@ -551,9 +591,10 @@
                 row.dataset.rate = String(rate);
             }
 
-            function createWorkingRow(initialEmployeeId = null, hourValues = []) {
+            function createWorkingRow(initialEmployeeId = null, hourValues = [], locked = false) {
                 const tr = document.createElement('tr');
                 tr.dataset.rate = '0';
+                tr.dataset.locked = locked ? 'true' : 'false';
 
                 const employeeCell = document.createElement('td');
                 employeeCell.innerHTML = `<select class="form-select working-employee-select">${createEmployeeOptions()}</select>`;
@@ -594,6 +635,10 @@
                     select.value = String(employees[0].id);
                 }
                 updateWorkingRowRate(tr);
+                const removeButton = tr.querySelector('.remove-working-row-button');
+                if (removeButton) {
+                    removeButton.disabled = locked;
+                }
             }
 
             function renderWorkingPlanTable(rows = []) {
@@ -601,9 +646,10 @@
                 state.workingPlanRows = Array.isArray(rows) ? rows.map((row) => ({
                     employeeId: row.employeeId ?? null,
                     hours: Array.isArray(row.hours) ? row.hours : [],
+                    locked: row.locked === true,
                 })) : [];
 
-                state.workingPlanRows.forEach((row) => createWorkingRow(row.employeeId ?? null, row.hours ?? []));
+                state.workingPlanRows.forEach((row) => createWorkingRow(row.employeeId ?? null, row.hours ?? [], row.locked === true));
 
                 if (state.workingPlanRows.length === 0) {
                     createWorkingRow();
@@ -676,6 +722,25 @@
                 });
                 summaryRow.querySelectorAll('.summary-cell').forEach((cell, idx) => { cell.textContent = String(Math.round(totals[idx])); });
                 return totals;
+            }
+
+            function rerenderPlansWithCurrentPeriods() {
+                const budgetRows = getCurrentRowsPayload().map((row) => ({
+                    employeeId: row.employeeId,
+                    hours: Array.isArray(row.hours) ? row.hours.slice(0, state.weeks.length) : [],
+                }));
+                const workingRows = Array.from(actualTableBody.querySelectorAll('tr')).map((row) => ({
+                    employeeId: row.querySelector('.working-employee-select')?.value ?? null,
+                    hours: Array.from(row.querySelectorAll('.actual-hour-cell')).map((cell) => {
+                        const input = cell.querySelector('.actual-hour-input');
+                        return String(input ? (parseFloat(input.value || '0') || 0) : (parseFloat(cell.dataset.hours || '0') || 0));
+                    }).slice(0, state.weeks.length),
+                    locked: row.dataset.locked === 'true',
+                }));
+
+                renderTableStructure(budgetRows);
+                renderWorkingPlanTable(workingRows);
+                renderChart();
             }
 
             function syncActualTable() {
@@ -928,7 +993,7 @@
                 });
 
                 if (!response.ok) {
-                    alert('Не удалось сохранить рабочий план');
+                    alert('Не удалось сохранить текущий план');
                     return;
                 }
 
@@ -1033,6 +1098,7 @@
                 state.activeBudget = Number(state.activeProject?.budget ?? 0);
                 projectStartDateLabel.textContent = start; projectEndDateLabel.textContent = end; projectBudgetLabel.textContent = String(Math.round(state.activeBudget));
                 if (!state.activeProject) { state.status='NEW'; state.actualWeeks=[]; state.actualMatrix={}; state.actualOverrides={}; state.resourcePlanTotals=[]; state.resourcePlansByInterval = {}; state.currentResourcePlan = {intervalId: null, status: 'NEW', cells: {}}; state.workingPlanRows = []; state.savedWorkingPlanRows = null; state.hasSavedWorkingPlan = false; renderTableStructure([]); renderWorkingPlanTable([]); renderChart(); return; }
+                state.additionalPeriods = 0;
                 const alignedWeeks = buildWeeks();
                 const currentBiweeklyIndex = (() => {
                     if (alignedWeeks.length === 0) { return -1; }
@@ -1051,6 +1117,13 @@
                 })();
                 const currentResourcePlanIntervalId = currentBiweeklyIndex >= 0 ? alignedWeeks[currentBiweeklyIndex]?.resourcePlanId ?? null : null;
                 const [saved, resourcePlans, workingPlan] = await Promise.all([loadSavedPlan(state.activeProject.id), loadResourcePlans(alignedWeeks), loadWorkingPlan(state.activeProject.id)]);
+                state.additionalPeriods = Math.max(
+                    0,
+                    getRowsMaxLength(saved.rows) - alignedWeeks.length,
+                    getRowsMaxLength(workingPlan.rows) - alignedWeeks.length,
+                    getRowsMaxLength(workingPlan.savedRows || []) - alignedWeeks.length
+                );
+                state.weeks = buildWeeks();
                 state.status = saved.status; state.actualWeeks = []; state.actualMatrix = {}; state.actualOverrides = {}; state.resourcePlansByInterval = resourcePlans; state.currentResourcePlan = resourcePlans[String(currentResourcePlanIntervalId)] || {intervalId: currentResourcePlanIntervalId, status: 'NEW', cells: {}}; state.savedWorkingPlanRows = workingPlan.savedRows; state.hasSavedWorkingPlan = workingPlan.hasSaved;
                 renderTableStructure(saved.rows); renderWorkingPlanTable(workingPlan.rows); renderChart();
             }
@@ -1077,12 +1150,15 @@
                 state.hasSavedWorkingPlan = workingPlan.hasSaved;
 
                 if (Array.isArray(workingPlan.savedRows)) {
+                    state.additionalPeriods = Math.max(0, getRowsMaxLength(workingPlan.savedRows) - buildAlignedBiweeklyIntervals(parseLocalDate(state.activeProject.start), parseLocalDate(state.activeProject.end)).length);
+                    state.weeks = buildWeeks();
                     renderWorkingPlanTable(workingPlan.savedRows);
+                    renderTableStructure(getCurrentRowsPayload());
                     renderChart();
                     return;
                 }
 
-                alert('Сохраненный рабочий план не найден');
+                alert('Сохраненный текущий план не найден');
             });
             document.getElementById('sendForApprovalButton').addEventListener('click', function () { if (state.activeProject) savePlan('SENT'); });
             document.getElementById('approvePlanButton').addEventListener('click', function () { if (isAdmin && state.activeProject) savePlan('APPROVED'); });
@@ -1133,9 +1209,28 @@
                     return;
                 }
 
+                const row = event.target.closest('tr');
+                if (row?.dataset.locked === 'true') {
+                    return;
+                }
+
                 event.target.closest('tr')?.remove();
                 refreshActualSummaryFromRenderedTable();
                 renderChart();
+            });
+            document.getElementById('addPeriodButton')?.addEventListener('click', function () {
+                state.additionalPeriods += 1;
+                state.weeks = buildWeeks();
+                rerenderPlansWithCurrentPeriods();
+            });
+            document.getElementById('removePeriodButton')?.addEventListener('click', function () {
+                if (state.additionalPeriods <= 0) {
+                    return;
+                }
+
+                state.additionalPeriods -= 1;
+                state.weeks = buildWeeks();
+                rerenderPlansWithCurrentPeriods();
             });
             tableBody.addEventListener('click', function (event) {
                 if (!event.target.classList.contains('remove-row-button')) {

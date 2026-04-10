@@ -469,9 +469,11 @@ final class DemoController extends AbstractController
         $currentResourcePlan = $currentIntervalId !== '' ? $this->resourcePlanStorage->loadByIntervalId($currentIntervalId) : null;
         $isCurrentResourcePlanApproved = \is_array($currentResourcePlan) && $this->normalizeResourcePlanStatus((string) ($currentResourcePlan['status'] ?? 'NEW')) === 'APPROVED';
         $currentResourceCells = \is_array($currentResourcePlan['cells'] ?? null) ? $currentResourcePlan['cells'] : [];
+        $submittedEmployeeIds = $this->buildSubmittedEmployeeIds($project);
 
         $baseRowsByEmployee = [];
         $employeeIds = [];
+        $lockedEmployeeIds = [];
         foreach ($baseRows as $row) {
             if (!\is_array($row) || !isset($row['employeeId'])) {
                 continue;
@@ -479,20 +481,13 @@ final class DemoController extends AbstractController
 
             $employeeId = (string) $row['employeeId'];
             $employeeIds[$employeeId] = true;
+            $lockedEmployeeIds[$employeeId] = true;
             $baseRowsByEmployee[$employeeId] = \is_array($row['hours'] ?? null) ? $row['hours'] : [];
         }
 
-        foreach (array_keys($actualMatrix) as $employeeId) {
+        foreach ($submittedEmployeeIds as $employeeId) {
             $employeeIds[(string) $employeeId] = true;
-        }
-
-        if ($isCurrentResourcePlanApproved && $currentIntervalId !== '') {
-            $projectPrefix = $currentIntervalId . '::' . $project->getId() . '::';
-            foreach (array_keys($currentResourceCells) as $cellKey) {
-                if (str_starts_with((string) $cellKey, $projectPrefix)) {
-                    $employeeIds[substr((string) $cellKey, \strlen($projectPrefix))] = true;
-                }
-            }
+            $lockedEmployeeIds[(string) $employeeId] = true;
         }
 
         $employeeOrder = array_map(static fn (array $employee): string => (string) $employee['id'], $this->buildEmployeeData());
@@ -529,10 +524,48 @@ final class DemoController extends AbstractController
                 );
             }
 
-            $rows[] = ['employeeId' => $employeeId, 'hours' => $hours];
+            $rows[] = [
+                'employeeId' => $employeeId,
+                'hours' => $hours,
+                'locked' => isset($lockedEmployeeIds[$employeeId]),
+            ];
         }
 
         return $rows;
+    }
+
+    private function buildSubmittedEmployeeIds(Project $project): array
+    {
+        $start = method_exists($project, 'getStart') ? $project->getStart() : null;
+        $end = method_exists($project, 'getEnd') ? $project->getEnd() : null;
+
+        if (!$start instanceof \DateTimeInterface || !$end instanceof \DateTimeInterface || $start > $end) {
+            return [];
+        }
+
+        $periodStart = (new \DateTimeImmutable($start->format('Y-m-d')))->modify('monday this week')->modify('-1 week')->setTime(0, 0, 0);
+        $periodEnd = (new \DateTimeImmutable($end->format('Y-m-d')))->modify('sunday this week')->modify('+2 week')->setTime(23, 59, 59);
+        $employeeIds = [];
+
+        $timesheets = $this->entityManager->getRepository(Timesheet::class)->createQueryBuilder('t')
+            ->andWhere('t.project = :project')
+            ->andWhere('t.begin >= :begin')
+            ->andWhere('t.begin <= :end')
+            ->setParameter('project', $project)
+            ->setParameter('begin', $periodStart)
+            ->setParameter('end', $periodEnd)
+            ->getQuery()
+            ->getResult();
+
+        foreach ($timesheets as $timesheet) {
+            if (!$timesheet instanceof Timesheet || $timesheet->getUser() === null) {
+                continue;
+            }
+
+            $employeeIds[(string) $timesheet->getUser()->getId()] = (string) $timesheet->getUser()->getId();
+        }
+
+        return array_values($employeeIds);
     }
 
     private function resolveWorkingPlanHoursForInterval(Project $project, string $employeeId, int $intervalIndex, array $intervals, int $currentBiweeklyIndex, bool $isCurrentResourcePlanApproved, array $baseRowsByEmployee, array $actualWeekIndexByStart, array $actualMatrix, array $currentResourceCells): float
