@@ -35,6 +35,8 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 #[IsGranted('demo')]
 final class DemoController extends AbstractController
 {
+    private const ALLOWED_PLANNING_ROLES = ['ROLE_TEAMLEAD', 'ROLE_ADMIN', 'ROLE_SUPER_ADMIN'];
+
     public function __construct(private DemoRepository $repository, private DemoConfiguration $configuration, private EntityManagerInterface $entityManager, private BudgetPlanStorage $budgetPlanStorage, private ResourcePlanStorage $resourcePlanStorage, private WorkingPlanStorage $workingPlanStorage)
     {
     }
@@ -42,6 +44,8 @@ final class DemoController extends AbstractController
     #[Route(path: '', name: 'demo', methods: ['GET', 'POST'])]
     public function index(LocaleService $localeService): Response
     {
+        $this->denyPlanningAccessUnlessGranted();
+
         // some demo data, which can be viewed in the "test locale" box
         $begin = 240 * 3600 + rand(1, 3 * 3600);
         $end = $begin + (rand(10 * 3600, 15 * 3600));
@@ -121,6 +125,8 @@ final class DemoController extends AbstractController
     #[Route(path: '/resource-plan', name: 'demo_resource_plan', methods: ['GET'])]
     public function resourcePlan(): Response
     {
+        $this->denyPlanningAccessUnlessGranted();
+
         $page = new PageSetup('Ресурсный план');
         $page->setActionName('demo_resource_plan');
 
@@ -252,6 +258,8 @@ final class DemoController extends AbstractController
     #[Route(path: '/resource-plan/{intervalId}', name: 'demo_resource_plan_get', methods: ['GET'])]
     public function getResourcePlan(string $intervalId): JsonResponse
     {
+        $this->denyPlanningAccessUnlessGranted();
+
         $data = $this->resourcePlanStorage->loadByIntervalId($intervalId);
         $status = $this->normalizeResourcePlanStatus($data === null ? 'NEW' : (string) ($data['status'] ?? 'NEW'));
         $cells = $data === null || !\is_array($data['cells'] ?? null) ? [] : $data['cells'];
@@ -271,6 +279,8 @@ final class DemoController extends AbstractController
     #[Route(path: '/resource-plans', name: 'demo_resource_plan_bulk', methods: ['GET'])]
     public function getResourcePlans(Request $request): JsonResponse
     {
+        $this->denyPlanningAccessUnlessGranted();
+
         $intervalIds = $request->query->all('intervals');
         if (!\is_array($intervalIds)) {
             $intervalIds = [];
@@ -298,6 +308,8 @@ final class DemoController extends AbstractController
     #[Route(path: '/resource-plan/{intervalId}/status', name: 'demo_resource_plan_status', methods: ['POST'])]
     public function setResourcePlanStatus(Request $request, string $intervalId): JsonResponse
     {
+        $this->denyPlanningAccessUnlessGranted();
+
         $payload = json_decode($request->getContent(), true);
         $status = $this->normalizeResourcePlanStatus($payload['status'] ?? 'NEW');
         $cells = \is_array($payload['cells'] ?? null) ? $payload['cells'] : [];
@@ -313,6 +325,8 @@ final class DemoController extends AbstractController
     #[Route(path: '/working-plan/{project}', name: 'demo_working_plan_get', methods: ['GET'])]
     public function getWorkingPlan(Project $project): JsonResponse
     {
+        $this->denyPlanningAccessUnlessGranted();
+
         $saved = $this->workingPlanStorage->loadByProjectId((int) $project->getId());
         $savedRows = \is_array($saved['rows'] ?? null) ? $saved['rows'] : null;
 
@@ -326,6 +340,8 @@ final class DemoController extends AbstractController
     #[Route(path: '/working-plan/{project}', name: 'demo_working_plan_save', methods: ['POST'])]
     public function saveWorkingPlan(Request $request, Project $project): JsonResponse
     {
+        $this->denyPlanningAccessUnlessGranted();
+
         $payload = json_decode($request->getContent(), true);
         $rows = \is_array($payload['rows'] ?? null) ? $payload['rows'] : [];
 
@@ -339,6 +355,8 @@ final class DemoController extends AbstractController
     #[Route(path: '/budget-plan/{project}', name: 'demo_budget_plan_get', methods: ['GET'])]
     public function getBudgetPlan(Project $project): JsonResponse
     {
+        $this->denyPlanningAccessUnlessGranted();
+
         $data = $this->budgetPlanStorage->loadByProjectId((int) $project->getId());
 
         if ($data === null) {
@@ -354,6 +372,8 @@ final class DemoController extends AbstractController
     #[Route(path: '/budget-plan/{project}/status', name: 'demo_budget_plan_status', methods: ['POST'])]
     public function setBudgetPlanStatus(Request $request, Project $project): JsonResponse
     {
+        $this->denyPlanningAccessUnlessGranted();
+
         $payload = json_decode($request->getContent(), true);
         $status = $this->normalizePlanStatus($payload['status'] ?? 'NEW');
         $rows = \is_array($payload['rows'] ?? null) ? $payload['rows'] : [];
@@ -385,10 +405,23 @@ final class DemoController extends AbstractController
         };
     }
 
+    private function denyPlanningAccessUnlessGranted(): void
+    {
+        foreach (self::ALLOWED_PLANNING_ROLES as $role) {
+            if ($this->isGranted($role)) {
+                return;
+            }
+        }
+
+        throw $this->createAccessDeniedException('Access allowed only for Teamlead, Admin or Super Admin users.');
+    }
+
 
     #[Route(path: '/budget-plan/{project}/actual-costs', name: 'demo_budget_plan_actual_costs', methods: ['GET'])]
     public function getActualCosts(Project $project): JsonResponse
     {
+        $this->denyPlanningAccessUnlessGranted();
+
         return new JsonResponse($this->buildActualCostData($project));
     }
 

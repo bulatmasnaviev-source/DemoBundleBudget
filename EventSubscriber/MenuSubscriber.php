@@ -17,6 +17,8 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 
 final class MenuSubscriber implements EventSubscriberInterface
 {
+    private const ALLOWED_PLANNING_ROLES = ['ROLE_TEAMLEAD', 'ROLE_ADMIN', 'ROLE_SUPER_ADMIN'];
+
     public function __construct(private readonly AuthorizationCheckerInterface $security)
     {
     }
@@ -36,7 +38,7 @@ final class MenuSubscriber implements EventSubscriberInterface
             return;
         }
 
-        if ($auth->isGranted('demo')) {
+        if ($auth->isGranted('demo') && $this->isPlanningAccessGranted()) {
             $menu = $event->getMenu();
             $menu->addChild(
                 new MenuItemModel('demo', 'Менеджмент затрат', 'demo', [], 'fas fa-snowman')
@@ -45,5 +47,16 @@ final class MenuSubscriber implements EventSubscriberInterface
                 new MenuItemModel('demo_resource_plan', 'Ресурсный план', 'demo_resource_plan', [], 'fas fa-calendar-alt')
             );
         }
+    }
+
+    private function isPlanningAccessGranted(): bool
+    {
+        foreach (self::ALLOWED_PLANNING_ROLES as $role) {
+            if ($this->security->isGranted($role)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

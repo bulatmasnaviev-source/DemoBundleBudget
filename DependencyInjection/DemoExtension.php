@@ -62,6 +62,12 @@ class DemoExtension extends AbstractPluginExtension implements PrependExtensionI
             ],
             'permissions' => [
                 'roles' => [
+                    'ROLE_TEAMLEAD' => [
+                        'demo',
+                    ],
+                    'ROLE_ADMIN' => [
+                        'demo',
+                    ],
                     'ROLE_SUPER_ADMIN' => [
                         'demo',
                     ],
