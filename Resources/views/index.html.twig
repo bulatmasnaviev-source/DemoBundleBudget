@@ -251,6 +251,26 @@
                     const actualTableContainer = actualTableHead.closest('.table-responsive');
                     actualTableContainer?.parentElement?.insertBefore(controls, actualTableContainer);
                 }
+
+                if (!document.getElementById('workingPlanDuplicateWarning')) {
+                    const modal = document.createElement('div');
+                    modal.id = 'workingPlanDuplicateWarning';
+                    modal.className = 'position-fixed top-0 start-0 w-100 h-100 d-none';
+                    modal.style.backgroundColor = 'rgba(0, 0, 0, 0.35)';
+                    modal.style.zIndex = '1050';
+                    modal.innerHTML = `
+                        <div class="bg-white rounded shadow p-4 position-absolute top-50 start-50 translate-middle" style="max-width: 34rem; width: calc(100% - 2rem);">
+                            <p class="mb-4">В Текущем плане сотрудники указаны дважды или более раз. Изменения не сохранены</p>
+                            <div class="d-flex justify-content-end">
+                                <button id="workingPlanDuplicateWarningClose" type="button" class="btn btn-outline-dark">Понял, принял</button>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+                    document.getElementById('workingPlanDuplicateWarningClose')?.addEventListener('click', function () {
+                        modal.classList.add('d-none');
+                    });
+                }
             }
 
             setupManagementLayout();
@@ -547,6 +567,24 @@
                         return String(input ? (parseFloat(input.value || '0') || 0) : (parseFloat(cell.dataset.hours || '0') || 0));
                     }),
                 }));
+            }
+
+            function hasDuplicateWorkingPlanEmployees() {
+                const employeeIds = Array.from(actualTableBody.querySelectorAll('.working-employee-select'))
+                    .map((select) => String(select.value || ''))
+                    .filter((employeeId) => employeeId !== '');
+
+                return new Set(employeeIds).size !== employeeIds.length;
+            }
+
+            function assertWorkingPlanEmployeesUnique() {
+                if (!hasDuplicateWorkingPlanEmployees()) {
+                    return true;
+                }
+
+                document.getElementById('workingPlanDuplicateWarning')?.classList.remove('d-none');
+
+                return false;
             }
 
             function isCurrentResourcePlanApproved() {
@@ -1131,10 +1169,18 @@
             document.getElementById('addRowButton').addEventListener('click', function () { createRow(); setStatus(state.status); calculateSummary(); });
             addWorkingRowButton.addEventListener('click', function () { createWorkingRow(); refreshActualSummaryFromRenderedTable(); renderChart(); });
             saveWorkingPlanButton.addEventListener('click', async function () {
+                if (!assertWorkingPlanEmployeesUnique()) {
+                    return;
+                }
+
                 renderChart();
                 await persistWorkingPlan();
             });
             sendToResourcePlanButton.addEventListener('click', async function () {
+                if (!assertWorkingPlanEmployeesUnique()) {
+                    return;
+                }
+
                 await saveCurrentResourcePlanIntervalFromActualTable();
             });
             rebuildWorkingPlanChartButton.addEventListener('click', function () {
