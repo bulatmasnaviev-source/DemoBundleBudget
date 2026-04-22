@@ -1038,6 +1038,7 @@
                 const payload = await response.json();
                 state.savedWorkingPlanRows = Array.isArray(payload.rows) ? payload.rows : rows;
                 state.hasSavedWorkingPlan = true;
+                alert('Успешно сохранено');
                 state.workingPlanRows = state.savedWorkingPlanRows;
             }
 
@@ -1121,6 +1122,7 @@
                 };
                 state.resourcePlansByInterval[String(intervalId)] = state.currentResourcePlan;
                 refreshResourcePlanSummary();
+                alert('Успешно отправлено');
             }
 
             async function savePlan(status) {
@@ -1201,6 +1203,7 @@
                     renderTableStructure(getCurrentRowsPayload());
                     renderWorkingPlanTable(workingPlan.savedRows);
                     renderChart();
+                    alert('Последний сохраненный Текущий план выгружен успешно');
                     return;
                 }
 

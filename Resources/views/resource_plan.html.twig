@@ -572,7 +572,7 @@
                     state.dirty = false;
                     restoreProjectsForInterval(intervalId);
                     renderTable();
-                    return;
+                    return false;
                 }
 
                 const payload = await response.json();
@@ -582,6 +582,8 @@
                 state.dirty = false;
                 restoreProjectsForInterval(intervalId);
                 renderTable();
+
+                return true;
             }
 
             async function saveInterval(status) {
@@ -605,6 +607,7 @@
                 const intervalId = getIntervalId();
                 try {
                     await persistInterval(intervalId, status, {...state.cells}, true);
+                    alert(status === 'APPROVED' ? 'Ресурсный план успешно утвержден' : 'Успешно сохранено');
                 } catch (_error) {
                     alert('Не удалось сохранить ресурсный план');
                 }
@@ -693,8 +696,10 @@
                 renderTable();
             });
 
-            reloadButton.addEventListener('click', function () {
-                loadInterval(getIntervalId());
+            reloadButton.addEventListener('click', async function () {
+                if (await loadInterval(getIntervalId())) {
+                    alert('Последний сохраненный Ресурсный план выгружен успешно');
+                }
             });
 
             approveButton.addEventListener('click', function () {
