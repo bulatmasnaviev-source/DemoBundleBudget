@@ -1198,8 +1198,8 @@
                 if (Array.isArray(workingPlan.savedRows)) {
                     state.additionalPeriods = Math.max(0, getRowsMaxLength(workingPlan.savedRows) - buildAlignedBiweeklyIntervals(parseLocalDate(state.activeProject.start), parseLocalDate(state.activeProject.end)).length);
                     state.weeks = buildWeeks();
-                    renderWorkingPlanTable(workingPlan.savedRows);
                     renderTableStructure(getCurrentRowsPayload());
+                    renderWorkingPlanTable(workingPlan.savedRows);
                     renderChart();
                     return;
                 }
