@@ -14,7 +14,7 @@
                     <div>
                         <label class="form-label" for="todoBlock">Блок</label>
                         <select id="todoBlock" class="form-select">
-                            <option value="">Выберите</option>
+                            <option value=""></option>
                             <option value="Проекты">Проект</option>
                             <option value="Исследования">Исследование</option>
                             <option value="PR">PR</option>
@@ -23,40 +23,48 @@
                     </div>
                     <div>
                         <label class="form-label" for="todoStage">Этап</label>
-                        <input id="todoStage" class="form-control" type="text" value="Инициация" readonly>
+                        <input id="todoStage" class="form-control todo-stage-field" type="text" value="Инициация" readonly>
                     </div>
                     <div>
                         <label class="form-label" for="todoProject">Проект</label>
-                        <input id="todoProject" class="form-control" type="text">
+                        <textarea id="todoProject" class="form-control todo-auto-field" rows="1"></textarea>
                     </div>
                     <div>
                         <label class="form-label" for="todoTask">Задача</label>
-                        <input id="todoTask" class="form-control" type="text">
+                        <textarea id="todoTask" class="form-control todo-auto-field" rows="1"></textarea>
                     </div>
                     <div>
                         <label class="form-label" for="todoTaskStatus">Статус по задаче</label>
-                        <input id="todoTaskStatus" class="form-control" type="text">
+                        <textarea id="todoTaskStatus" class="form-control todo-auto-field" rows="1"></textarea>
                     </div>
                     <div>
                         <label class="form-label" for="todoNextStep">Следующий шаг</label>
-                        <input id="todoNextStep" class="form-control" type="text">
+                        <textarea id="todoNextStep" class="form-control todo-auto-field" rows="1"></textarea>
                     </div>
                     <div>
                         <label class="form-label" for="todoResponsible">Ответственный</label>
-                        <input id="todoResponsible" class="form-control" type="text">
+                        <textarea id="todoResponsible" class="form-control todo-auto-field" rows="1"></textarea>
                     </div>
                     <div>
                         <label class="form-label" for="todoDate">Дата</label>
                         <input id="todoDate" class="form-control" type="date">
                     </div>
                 </div>
-                <button id="todoSubmitButton" type="button" class="btn btn-outline-dark">Отправить</button>
+                <button id="todoSubmitButton" type="button" class="btn btn-outline-dark mb-3">Отправить</button>
+                <div class="d-flex flex-wrap gap-2">
+                    <button id="todoEditButton" type="button" class="btn btn-outline-dark" title="Редактировать"><i class="fas fa-pencil-alt"></i></button>
+                    <button id="todoSaveButton" type="button" class="btn btn-outline-dark">Сохранить</button>
+                    <button id="todoNextStageButton" type="button" class="btn btn-outline-dark">Следующий этап</button>
+                    <button id="todoPreviousStageButton" type="button" class="btn btn-outline-dark">Предыдущий этап</button>
+                    <button id="todoCancelButton" type="button" class="btn btn-outline-dark">Отменить</button>
+                    <button id="todoReturnButton" type="button" class="btn btn-outline-dark">Вернуть задачу</button>
+                </div>
             </section>
 
             <section class="mb-5">
                 <h5 class="fw-bold mb-3">Проекты</h5>
                 <div class="table-responsive todo-table-shell">
-                    <table class="table table-bordered align-middle mb-0">
+                    <table class="table table-bordered align-middle mb-0 todo-data-table">
                         <thead id="todoProjectsHead"></thead>
                         <tbody id="todoProjectsBody"></tbody>
                     </table>
@@ -66,7 +74,7 @@
             <section class="mb-5">
                 <h5 class="fw-bold mb-3">Исследования, PR и G&A</h5>
                 <div class="table-responsive todo-table-shell">
-                    <table class="table table-bordered align-middle mb-0">
+                    <table class="table table-bordered align-middle mb-0 todo-data-table">
                         <thead id="todoResearchHead"></thead>
                         <tbody id="todoResearchBody"></tbody>
                     </table>
@@ -76,7 +84,7 @@
             <section class="mb-5">
                 <h5 class="fw-bold mb-3">Завершенные проекты</h5>
                 <div class="table-responsive todo-table-shell">
-                    <table class="table table-bordered align-middle mb-0">
+                    <table class="table table-bordered align-middle mb-0 todo-data-table">
                         <thead id="todoCompletedHead"></thead>
                         <tbody id="todoCompletedBody"></tbody>
                     </table>
@@ -86,7 +94,7 @@
             <section>
                 <h5 class="fw-bold mb-3">Отменено</h5>
                 <div class="table-responsive todo-table-shell">
-                    <table class="table table-bordered align-middle mb-0">
+                    <table class="table table-bordered align-middle mb-0 todo-data-table">
                         <thead id="todoCancelledHead"></thead>
                         <tbody id="todoCancelledBody"></tbody>
                     </table>
@@ -103,6 +111,19 @@
             display: grid;
             grid-template-columns: repeat(8, minmax(0, 1fr));
             gap: 0.75rem;
+            align-items: start;
+        }
+
+        .todo-stage-field {
+            background-color: #e9ecef;
+            color: #495057;
+        }
+
+        .todo-auto-field {
+            width: 100%;
+            min-height: 2.375rem;
+            resize: vertical;
+            overflow: hidden;
         }
 
         .todo-table-shell {
@@ -111,16 +132,60 @@
             overflow-y: auto;
         }
 
-        .todo-table-shell thead th {
+        .todo-data-table {
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .todo-data-table thead th {
             position: sticky;
             top: 0;
             background: #f8f9fa;
             z-index: 1;
         }
 
+        .todo-data-table th,
+        .todo-data-table td {
+            white-space: normal;
+            word-break: break-word;
+            vertical-align: top;
+        }
+
+        .todo-data-table td:nth-child(1),
+        .todo-data-table th:nth-child(1) {
+            width: 5rem;
+        }
+
+        .todo-data-table td:nth-child(2),
+        .todo-data-table th:nth-child(2),
+        .todo-data-table td:nth-child(3),
+        .todo-data-table th:nth-child(3),
+        .todo-data-table td:nth-child(9),
+        .todo-data-table th:nth-child(9) {
+            width: 8rem;
+        }
+
+        .todo-data-table td:nth-child(4),
+        .todo-data-table th:nth-child(4),
+        .todo-data-table td:nth-child(8),
+        .todo-data-table th:nth-child(8) {
+            width: 10rem;
+        }
+
         .todo-empty-row td {
             height: 2.75rem;
             background: #fff;
+        }
+
+        .todo-selected-row td {
+            background-color: #fff3cd;
+        }
+
+        .todo-row-edit-field,
+        .todo-row-edit-select {
+            width: 100%;
+            min-height: 2.25rem;
+            resize: vertical;
         }
 
         @media (max-width: 1600px) {
@@ -143,24 +208,27 @@
         (function () {
             const createUrl = '{{ path('demo_todo_list_create') }}';
             const dataUrl = '{{ path('demo_todo_list_data') }}';
+            const updateUrlTemplate = '{{ path('demo_todo_list_update', {'id': 'ENTRY_ID'}) }}';
+            const updateStageUrlTemplate = '{{ path('demo_todo_list_update_stage', {'id': 'ENTRY_ID'}) }}';
             const columns = ['ID', 'Блок', 'Этап', 'Проект', 'Задача', 'Статус по задаче', 'Следующий шаг', 'Ответственный', 'Дата'];
+            const blockOptions = [
+                {value: 'Проекты', label: 'Проект'},
+                {value: 'Исследования', label: 'Исследование'},
+                {value: 'PR', label: 'PR'},
+                {value: 'G&A', label: 'G&A'},
+            ];
+            const stageSequence = ['Инициация', 'Реализация', 'Завершение', 'Завершено'];
             const sectionMap = {
-                projects: {
-                    head: document.getElementById('todoProjectsHead'),
-                    body: document.getElementById('todoProjectsBody'),
-                },
-                research: {
-                    head: document.getElementById('todoResearchHead'),
-                    body: document.getElementById('todoResearchBody'),
-                },
-                completed: {
-                    head: document.getElementById('todoCompletedHead'),
-                    body: document.getElementById('todoCompletedBody'),
-                },
-                cancelled: {
-                    head: document.getElementById('todoCancelledHead'),
-                    body: document.getElementById('todoCancelledBody'),
-                },
+                projects: { head: document.getElementById('todoProjectsHead'), body: document.getElementById('todoProjectsBody') },
+                research: { head: document.getElementById('todoResearchHead'), body: document.getElementById('todoResearchBody') },
+                completed: { head: document.getElementById('todoCompletedHead'), body: document.getElementById('todoCompletedBody') },
+                cancelled: { head: document.getElementById('todoCancelledHead'), body: document.getElementById('todoCancelledBody') },
+            };
+            const state = {
+                buckets: {projects: [], research: [], completed: [], cancelled: []},
+                selectedRowId: null,
+                editingRowId: null,
+                editDraft: null,
             };
 
             const blockField = document.getElementById('todoBlock');
@@ -172,6 +240,20 @@
             const responsibleField = document.getElementById('todoResponsible');
             const dateField = document.getElementById('todoDate');
             const submitButton = document.getElementById('todoSubmitButton');
+            const editButton = document.getElementById('todoEditButton');
+            const saveButton = document.getElementById('todoSaveButton');
+            const nextStageButton = document.getElementById('todoNextStageButton');
+            const previousStageButton = document.getElementById('todoPreviousStageButton');
+            const cancelButton = document.getElementById('todoCancelButton');
+            const returnButton = document.getElementById('todoReturnButton');
+
+            function getUpdateUrl(id) {
+                return updateUrlTemplate.replace('ENTRY_ID', String(id));
+            }
+
+            function getStageUpdateUrl(id) {
+                return updateStageUrlTemplate.replace('ENTRY_ID', String(id));
+            }
 
             function escapeHtml(value) {
                 return String(value ?? '')
@@ -180,10 +262,6 @@
                     .replaceAll('>', '&gt;')
                     .replaceAll('"', '&quot;')
                     .replaceAll("'", '&#039;');
-            }
-
-            function createHeaderHtml() {
-                return `<tr>${columns.map((column) => `<th>${column}</th>`).join('')}</tr>`;
             }
 
             function formatDate(value) {
@@ -199,18 +277,64 @@
                 return `${parts[2]}.${parts[1]}.${parts[0]}`;
             }
 
+            function createHeaderHtml() {
+                return `<tr>${columns.map((column) => `<th>${column}</th>`).join('')}</tr>`;
+            }
+
+            function findEntryById(id) {
+                const searchId = Number(id);
+                for (const entries of Object.values(state.buckets)) {
+                    const found = entries.find((entry) => Number(entry.id) === searchId);
+                    if (found) {
+                        return found;
+                    }
+                }
+
+                return null;
+            }
+
+            function hasEntry(id) {
+                return findEntryById(id) !== null;
+            }
+
+            function getSelectedEntry() {
+                return state.selectedRowId === null ? null : findEntryById(state.selectedRowId);
+            }
+
+            function createBlockSelect(selectedValue) {
+                const options = blockOptions.map((option) => {
+                    const selected = option.value === selectedValue ? ' selected' : '';
+                    return `<option value="${escapeHtml(option.value)}"${selected}>${escapeHtml(option.label)}</option>`;
+                }).join('');
+
+                return `<select class="form-select todo-row-edit-select" data-field="block">${options}</select>`;
+            }
+
+            function createEditTextarea(field, value) {
+                return `<textarea class="form-control todo-row-edit-field" rows="1" data-field="${field}">${escapeHtml(value)}</textarea>`;
+            }
+
+            function createEditDate(field, value) {
+                return `<input class="form-control todo-row-edit-date" type="date" data-field="${field}" value="${escapeHtml(value)}">`;
+            }
+
             function createRowHtml(entry) {
+                const isSelected = Number(state.selectedRowId) === Number(entry.id);
+                const isEditing = Number(state.editingRowId) === Number(entry.id);
+                const rowClass = isSelected ? 'todo-selected-row' : '';
+                const draft = isEditing && state.editDraft ? state.editDraft : entry;
+
                 return `
-                    <tr>
+                    <tr class="${rowClass}" data-entry-id="${entry.id}">
                         <td>${escapeHtml(entry.id)}</td>
-                        <td>${escapeHtml(entry.block)}</td>
+                        <td>${isEditing ? createBlockSelect(draft.block) : escapeHtml(entry.block)}</td>
                         <td>${escapeHtml(entry.stage)}</td>
-                        <td>${escapeHtml(entry.project)}</td>
-                        <td>${escapeHtml(entry.task)}</td>
-                        <td>${escapeHtml(entry.taskStatus)}</td>
-                        <td>${escapeHtml(entry.nextStep)}</td>
-                        <td>${escapeHtml(entry.responsible)}</td>
-                        <td>${escapeHtml(formatDate(entry.date))}</td>
+                        <td>${isEditing ? createEditTextarea('project', draft.project) : escapeHtml(entry.project)}</td>
+                        <td>${isEditing ? createEditTextarea('task', draft.task) : escapeHtml(entry.task)}</td>
+                        <td>${isEditing ? createEditTextarea('taskStatus', draft.taskStatus) : escapeHtml(entry.taskStatus)}</td>
+                        <td>${isEditing ? createEditTextarea('nextStep', draft.nextStep) : escapeHtml(entry.nextStep)}</td>
+                        <td>${isEditing ? createEditTextarea('responsible', draft.responsible) : escapeHtml(entry.responsible)}</td>
+                        <td>${isEditing ? createEditDate('date', draft.date) : escapeHtml(formatDate(entry.date))}</td>
                     </tr>
                 `;
             }
@@ -224,13 +348,21 @@
                 section.head.innerHTML = createHeaderHtml();
 
                 const normalizedEntries = Array.isArray(entries) ? entries : [];
-                const bodyRows = normalizedEntries.map((entry) => createRowHtml(entry));
+                const rows = normalizedEntries.map((entry) => createRowHtml(entry));
                 const emptyRows = Math.max(0, 5 - normalizedEntries.length);
                 for (let i = 0; i < emptyRows; i++) {
-                    bodyRows.push(`<tr class="todo-empty-row">${'<td></td>'.repeat(columns.length)}</tr>`);
+                    rows.push(`<tr class="todo-empty-row">${'<td></td>'.repeat(columns.length)}</tr>`);
                 }
 
-                section.body.innerHTML = bodyRows.join('');
+                section.body.innerHTML = rows.join('');
+            }
+
+            function renderAllSections() {
+                renderSection('projects', state.buckets.projects ?? []);
+                renderSection('research', state.buckets.research ?? []);
+                renderSection('completed', state.buckets.completed ?? []);
+                renderSection('cancelled', state.buckets.cancelled ?? []);
+                initAutoResize(document.querySelectorAll('.todo-row-edit-field'));
             }
 
             async function loadTodoTables() {
@@ -240,10 +372,22 @@
                 }
 
                 const payload = await response.json();
-                renderSection('projects', payload.projects ?? []);
-                renderSection('research', payload.research ?? []);
-                renderSection('completed', payload.completed ?? []);
-                renderSection('cancelled', payload.cancelled ?? []);
+                state.buckets = {
+                    projects: Array.isArray(payload.projects) ? payload.projects : [],
+                    research: Array.isArray(payload.research) ? payload.research : [],
+                    completed: Array.isArray(payload.completed) ? payload.completed : [],
+                    cancelled: Array.isArray(payload.cancelled) ? payload.cancelled : [],
+                };
+
+                if (state.selectedRowId !== null && !hasEntry(state.selectedRowId)) {
+                    state.selectedRowId = null;
+                }
+                if (state.editingRowId !== null && !hasEntry(state.editingRowId)) {
+                    state.editingRowId = null;
+                    state.editDraft = null;
+                }
+
+                renderAllSections();
             }
 
             function getPayload() {
@@ -259,7 +403,7 @@
                 };
             }
 
-            function hasEmptyPayloadFields(payload) {
+            function hasEmptyValues(payload) {
                 return Object.values(payload).some((value) => String(value).trim() === '');
             }
 
@@ -272,11 +416,193 @@
                 nextStepField.value = '';
                 responsibleField.value = '';
                 dateField.value = '';
+                initAutoResize(document.querySelectorAll('.todo-auto-field'));
             }
+
+            function initAutoResize(elements) {
+                elements.forEach((element) => {
+                    if (!(element instanceof HTMLTextAreaElement)) {
+                        return;
+                    }
+
+                    element.style.height = 'auto';
+                    element.style.height = `${element.scrollHeight}px`;
+                });
+            }
+
+            function startEditingSelectedRow() {
+                const entry = getSelectedEntry();
+                if (!entry) {
+                    return;
+                }
+
+                state.editingRowId = entry.id;
+                state.editDraft = {
+                    id: entry.id,
+                    block: entry.block,
+                    stage: entry.stage,
+                    project: entry.project,
+                    task: entry.task,
+                    taskStatus: entry.taskStatus,
+                    nextStep: entry.nextStep,
+                    responsible: entry.responsible,
+                    date: entry.date,
+                };
+                renderAllSections();
+            }
+
+            async function saveEditedRow() {
+                if (state.editingRowId === null || state.editDraft === null) {
+                    return;
+                }
+
+                const payload = {
+                    block: String(state.editDraft.block || '').trim(),
+                    project: String(state.editDraft.project || '').trim(),
+                    task: String(state.editDraft.task || '').trim(),
+                    taskStatus: String(state.editDraft.taskStatus || '').trim(),
+                    nextStep: String(state.editDraft.nextStep || '').trim(),
+                    responsible: String(state.editDraft.responsible || '').trim(),
+                    date: String(state.editDraft.date || '').trim(),
+                };
+
+                if (hasEmptyValues(payload)) {
+                    alert('Все поля должны быть заполнены');
+                    return;
+                }
+
+                const response = await fetch(getUpdateUrl(state.editingRowId), {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload),
+                });
+
+                if (response.status === 422) {
+                    alert('Все поля должны быть заполнены');
+                    return;
+                }
+
+                if (!response.ok) {
+                    alert('Не удалось обновить запись');
+                    return;
+                }
+
+                const selectedId = state.selectedRowId;
+                state.editingRowId = null;
+                state.editDraft = null;
+                await loadTodoTables();
+                state.selectedRowId = selectedId;
+                renderAllSections();
+            }
+
+            function getNextStage(currentStage) {
+                if (currentStage === 'Отменено') {
+                    return currentStage;
+                }
+
+                const currentIndex = stageSequence.indexOf(currentStage);
+                if (currentIndex === -1 || currentIndex === stageSequence.length - 1) {
+                    return currentStage;
+                }
+
+                return stageSequence[currentIndex + 1];
+            }
+
+            function getPreviousStage(currentStage) {
+                if (currentStage === 'Отменено') {
+                    return currentStage;
+                }
+
+                const currentIndex = stageSequence.indexOf(currentStage);
+                if (currentIndex <= 0) {
+                    return currentStage;
+                }
+
+                return stageSequence[currentIndex - 1];
+            }
+
+            async function updateSelectedStage(targetStage) {
+                const entry = getSelectedEntry();
+                if (!entry || entry.stage === targetStage) {
+                    return;
+                }
+
+                const response = await fetch(getStageUpdateUrl(entry.id), {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({stage: targetStage}),
+                });
+
+                if (!response.ok) {
+                    alert('Не удалось обновить этап');
+                    return;
+                }
+
+                const selectedId = state.selectedRowId;
+                state.editingRowId = null;
+                state.editDraft = null;
+                await loadTodoTables();
+                state.selectedRowId = selectedId;
+                renderAllSections();
+            }
+
+            Object.values(sectionMap).forEach((section) => {
+                section.body.addEventListener('click', function (event) {
+                    const row = event.target.closest('tr[data-entry-id]');
+                    if (!row) {
+                        return;
+                    }
+
+                    const clickedId = Number(row.dataset.entryId);
+                    if (state.selectedRowId === clickedId && state.editingRowId === clickedId) {
+                        return;
+                    }
+
+                    state.selectedRowId = clickedId;
+                    if (state.editingRowId !== null && state.editingRowId !== state.selectedRowId) {
+                        state.editingRowId = null;
+                        state.editDraft = null;
+                    }
+                    renderAllSections();
+                });
+
+                section.body.addEventListener('input', function (event) {
+                    if (state.editingRowId === null || state.editDraft === null) {
+                        return;
+                    }
+
+                    const field = String(event.target.dataset.field || '');
+                    if (field === '') {
+                        return;
+                    }
+
+                    state.editDraft[field] = event.target.value;
+                    initAutoResize([event.target]);
+                });
+
+                section.body.addEventListener('change', function (event) {
+                    if (state.editingRowId === null || state.editDraft === null) {
+                        return;
+                    }
+
+                    const field = String(event.target.dataset.field || '');
+                    if (field === '') {
+                        return;
+                    }
+
+                    state.editDraft[field] = event.target.value;
+                });
+            });
+
+            document.querySelectorAll('.todo-auto-field').forEach((field) => {
+                field.addEventListener('input', function () {
+                    initAutoResize([field]);
+                });
+            });
 
             submitButton.addEventListener('click', async function () {
                 const payload = getPayload();
-                if (hasEmptyPayloadFields(payload)) {
+                if (hasEmptyValues(payload)) {
                     alert('Все поля должны быть заполнены');
                     return;
                 }
@@ -301,6 +627,51 @@
                 await loadTodoTables();
             });
 
+            editButton.addEventListener('click', function () {
+                startEditingSelectedRow();
+            });
+
+            saveButton.addEventListener('click', async function () {
+                await saveEditedRow();
+            });
+
+            nextStageButton.addEventListener('click', async function () {
+                const entry = getSelectedEntry();
+                if (!entry || entry.stage === 'Отменено') {
+                    return;
+                }
+
+                await updateSelectedStage(getNextStage(entry.stage));
+            });
+
+            previousStageButton.addEventListener('click', async function () {
+                const entry = getSelectedEntry();
+                if (!entry || entry.stage === 'Отменено') {
+                    return;
+                }
+
+                await updateSelectedStage(getPreviousStage(entry.stage));
+            });
+
+            cancelButton.addEventListener('click', async function () {
+                const entry = getSelectedEntry();
+                if (!entry) {
+                    return;
+                }
+
+                await updateSelectedStage('Отменено');
+            });
+
+            returnButton.addEventListener('click', async function () {
+                const entry = getSelectedEntry();
+                if (!entry || entry.stage !== 'Отменено') {
+                    return;
+                }
+
+                await updateSelectedStage('Инициация');
+            });
+
+            initAutoResize(document.querySelectorAll('.todo-auto-field'));
             loadTodoTables().catch(() => {
                 alert('Не удалось загрузить To-Do list');
             });

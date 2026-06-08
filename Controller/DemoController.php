@@ -203,6 +203,55 @@ final class DemoController extends AbstractController
         ], Response::HTTP_CREATED);
     }
 
+    #[Route(path: '/todo-list/entries/{id}', name: 'demo_todo_list_update', methods: ['POST'])]
+    public function updateTodoListEntry(int $id, Request $request): JsonResponse
+    {
+        $this->denyPlanningAccessUnlessGranted();
+
+        $payload = json_decode($request->getContent(), true);
+        $block = $this->normalizeTodoListBlock((string) ($payload['block'] ?? ''));
+        $project = trim((string) ($payload['project'] ?? ''));
+        $task = trim((string) ($payload['task'] ?? ''));
+        $taskStatus = trim((string) ($payload['taskStatus'] ?? ''));
+        $nextStep = trim((string) ($payload['nextStep'] ?? ''));
+        $responsible = trim((string) ($payload['responsible'] ?? ''));
+        $date = trim((string) ($payload['date'] ?? ''));
+
+        foreach ([$block, $project, $task, $taskStatus, $nextStep, $responsible, $date] as $value) {
+            if ($value === '') {
+                return new JsonResponse(['message' => 'Все поля должны быть заполнены'], Response::HTTP_UNPROCESSABLE_ENTITY);
+            }
+        }
+
+        $this->todoListStorage->updateById($id, [
+            'block' => $block,
+            'project_name' => $project,
+            'task_name' => $task,
+            'task_status' => $taskStatus,
+            'next_step' => $nextStep,
+            'responsible' => $responsible,
+            'task_date' => $date,
+        ]);
+
+        return new JsonResponse(['message' => 'Updated']);
+    }
+
+    #[Route(path: '/todo-list/entries/{id}/stage', name: 'demo_todo_list_update_stage', methods: ['POST'])]
+    public function updateTodoListEntryStage(int $id, Request $request): JsonResponse
+    {
+        $this->denyPlanningAccessUnlessGranted();
+
+        $payload = json_decode($request->getContent(), true);
+        $stage = $this->normalizeTodoListStage((string) ($payload['stage'] ?? ''));
+        if ($stage === '') {
+            return new JsonResponse(['message' => 'Invalid stage'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $this->todoListStorage->updateStageById($id, $stage);
+
+        return new JsonResponse(['message' => 'Stage updated']);
+    }
+
     private function buildEmployeeData(): array
     {
         $users = $this->entityManager->getRepository(User::class)->findBy([], ['alias' => 'ASC']);
@@ -478,6 +527,14 @@ final class DemoController extends AbstractController
             'PR' => 'PR',
             'G&A' => 'G&A',
             default => trim($block),
+        };
+    }
+
+    private function normalizeTodoListStage(string $stage): string
+    {
+        return match (trim($stage)) {
+            'Инициация', 'Реализация', 'Завершение', 'Завершено', 'Отменено' => trim($stage),
+            default => '',
         };
     }
 

@@ -7,6 +7,14 @@ use Doctrine\DBAL\Connection;
 final class TodoListStorage
 {
     private const TABLE = 'kimai2_demo_todo_list';
+    private const DATE_COLUMNS = [
+        'task_date',
+        'created_at',
+        'implementation_started_at',
+        'completion_started_at',
+        'completed_at',
+        'cancelled_at',
+    ];
 
     public function __construct(private readonly Connection $connection)
     {
@@ -31,6 +39,46 @@ final class TodoListStorage
         ]);
 
         return (int) $this->connection->lastInsertId();
+    }
+
+    public function updateById(int $id, array $data): void
+    {
+        $this->connection->update(self::TABLE, [
+            'block' => (string) ($data['block'] ?? ''),
+            'project_name' => (string) ($data['project_name'] ?? ''),
+            'task_name' => (string) ($data['task_name'] ?? ''),
+            'task_status' => (string) ($data['task_status'] ?? ''),
+            'next_step' => (string) ($data['next_step'] ?? ''),
+            'responsible' => (string) ($data['responsible'] ?? ''),
+            'task_date' => (string) ($data['task_date'] ?? ''),
+        ], ['id' => $id]);
+    }
+
+    public function updateStageById(int $id, string $stage): void
+    {
+        $updates = ['stage' => $stage];
+        $today = (new \DateTimeImmutable('today'))->format('Y-m-d');
+
+        if ($stage === 'Инициация') {
+            $updates['cancelled_at'] = null;
+        } elseif ($stage === 'Реализация') {
+            $updates['implementation_started_at'] = $today;
+        } elseif ($stage === 'Завершение') {
+            $updates['completion_started_at'] = $today;
+        } elseif ($stage === 'Завершено') {
+            $updates['completed_at'] = $today;
+        } elseif ($stage === 'Отменено') {
+            $updates['cancelled_at'] = $today;
+        }
+
+        $types = [];
+        foreach (array_keys($updates) as $column) {
+            if (\in_array($column, self::DATE_COLUMNS, true)) {
+                $types[$column] = $updates[$column] === null ? \PDO::PARAM_NULL : \Doctrine\DBAL\ParameterType::STRING;
+            }
+        }
+
+        $this->connection->update(self::TABLE, $updates, ['id' => $id], $types);
     }
 
     public function loadBuckets(): array
