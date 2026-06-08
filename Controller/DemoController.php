@@ -24,6 +24,7 @@ use KimaiPlugin\DemoBundle\Report\DemoReportQuery;
 use KimaiPlugin\DemoBundle\Repository\BudgetPlanStorage;
 use KimaiPlugin\DemoBundle\Repository\DemoRepository;
 use KimaiPlugin\DemoBundle\Repository\ResourcePlanStorage;
+use KimaiPlugin\DemoBundle\Repository\TodoListStorage;
 use KimaiPlugin\DemoBundle\Repository\WorkingPlanStorage;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -37,7 +38,7 @@ final class DemoController extends AbstractController
 {
     private const ALLOWED_PLANNING_ROLES = ['ROLE_TEAMLEAD', 'ROLE_ADMIN', 'ROLE_SUPER_ADMIN'];
 
-    public function __construct(private DemoRepository $repository, private DemoConfiguration $configuration, private EntityManagerInterface $entityManager, private BudgetPlanStorage $budgetPlanStorage, private ResourcePlanStorage $resourcePlanStorage, private WorkingPlanStorage $workingPlanStorage)
+    public function __construct(private DemoRepository $repository, private DemoConfiguration $configuration, private EntityManagerInterface $entityManager, private BudgetPlanStorage $budgetPlanStorage, private ResourcePlanStorage $resourcePlanStorage, private WorkingPlanStorage $workingPlanStorage, private TodoListStorage $todoListStorage)
     {
     }
 
@@ -136,6 +137,70 @@ final class DemoController extends AbstractController
             'active_projects' => $this->buildApprovedBudgetProjects(),
             'all_active_projects' => $this->buildActiveProjects(),
         ]);
+    }
+
+    #[Route(path: '/todo-list', name: 'demo_todo_list', methods: ['GET'])]
+    public function todoList(): Response
+    {
+        $this->denyPlanningAccessUnlessGranted();
+
+        $page = new PageSetup('To-Do list');
+        $page->setActionName('demo_todo_list');
+
+        return $this->render('@Demo/todo_list.html.twig', [
+            'page_setup' => $page,
+        ]);
+    }
+
+    #[Route(path: '/todo-list/data', name: 'demo_todo_list_data', methods: ['GET'])]
+    public function getTodoListData(): JsonResponse
+    {
+        $this->denyPlanningAccessUnlessGranted();
+
+        return new JsonResponse($this->todoListStorage->loadBuckets());
+    }
+
+    #[Route(path: '/todo-list/entries', name: 'demo_todo_list_create', methods: ['POST'])]
+    public function createTodoListEntry(Request $request): JsonResponse
+    {
+        $this->denyPlanningAccessUnlessGranted();
+
+        $payload = json_decode($request->getContent(), true);
+        $block = $this->normalizeTodoListBlock((string) ($payload['block'] ?? ''));
+        $stage = 'Инициация';
+        $project = trim((string) ($payload['project'] ?? ''));
+        $task = trim((string) ($payload['task'] ?? ''));
+        $taskStatus = trim((string) ($payload['taskStatus'] ?? ''));
+        $nextStep = trim((string) ($payload['nextStep'] ?? ''));
+        $responsible = trim((string) ($payload['responsible'] ?? ''));
+        $date = trim((string) ($payload['date'] ?? ''));
+
+        foreach ([$block, $stage, $project, $task, $taskStatus, $nextStep, $responsible, $date] as $value) {
+            if ($value === '') {
+                return new JsonResponse(['message' => 'Все поля должны быть заполнены'], Response::HTTP_UNPROCESSABLE_ENTITY);
+            }
+        }
+
+        $id = $this->todoListStorage->create([
+            'stage' => $stage,
+            'block' => $block,
+            'project_name' => $project,
+            'task_name' => $task,
+            'task_status' => $taskStatus,
+            'next_step' => $nextStep,
+            'responsible' => $responsible,
+            'task_date' => $date,
+            'created_at' => (new \DateTimeImmutable('today'))->format('Y-m-d'),
+            'implementation_started_at' => null,
+            'completion_started_at' => null,
+            'completed_at' => null,
+            'cancelled_at' => null,
+        ]);
+
+        return new JsonResponse([
+            'id' => $id,
+            'message' => 'Created',
+        ], Response::HTTP_CREATED);
     }
 
     private function buildEmployeeData(): array
@@ -402,6 +467,17 @@ final class DemoController extends AbstractController
         return match ($status) {
             'DISCUSSION', 'APPROVED', 'CORRECTING' => $status,
             default => 'NEW',
+        };
+    }
+
+    private function normalizeTodoListBlock(string $block): string
+    {
+        return match (trim($block)) {
+            'Проект', 'Проекты' => 'Проекты',
+            'Исследование', 'Исследования' => 'Исследования',
+            'PR' => 'PR',
+            'G&A' => 'G&A',
+            default => trim($block),
         };
     }
 

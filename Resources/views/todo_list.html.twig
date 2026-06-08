@@ -1,0 +1,309 @@
+{% extends 'base.html.twig' %}
+
+{% block main %}
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">To-Do list</h3>
+        </div>
+        <div class="card-body">
+            <h4 class="display-6 fw-bold mb-3">To-Do list</h4>
+
+            <section class="mb-5">
+                <h5 class="fw-bold mb-3">Добавить инициацию</h5>
+                <div class="todo-form-grid mb-3">
+                    <div>
+                        <label class="form-label" for="todoBlock">Блок</label>
+                        <select id="todoBlock" class="form-select">
+                            <option value="">Выберите</option>
+                            <option value="Проекты">Проект</option>
+                            <option value="Исследования">Исследование</option>
+                            <option value="PR">PR</option>
+                            <option value="G&A">G&A</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label" for="todoStage">Этап</label>
+                        <input id="todoStage" class="form-control" type="text" value="Инициация" readonly>
+                    </div>
+                    <div>
+                        <label class="form-label" for="todoProject">Проект</label>
+                        <input id="todoProject" class="form-control" type="text">
+                    </div>
+                    <div>
+                        <label class="form-label" for="todoTask">Задача</label>
+                        <input id="todoTask" class="form-control" type="text">
+                    </div>
+                    <div>
+                        <label class="form-label" for="todoTaskStatus">Статус по задаче</label>
+                        <input id="todoTaskStatus" class="form-control" type="text">
+                    </div>
+                    <div>
+                        <label class="form-label" for="todoNextStep">Следующий шаг</label>
+                        <input id="todoNextStep" class="form-control" type="text">
+                    </div>
+                    <div>
+                        <label class="form-label" for="todoResponsible">Ответственный</label>
+                        <input id="todoResponsible" class="form-control" type="text">
+                    </div>
+                    <div>
+                        <label class="form-label" for="todoDate">Дата</label>
+                        <input id="todoDate" class="form-control" type="date">
+                    </div>
+                </div>
+                <button id="todoSubmitButton" type="button" class="btn btn-outline-dark">Отправить</button>
+            </section>
+
+            <section class="mb-5">
+                <h5 class="fw-bold mb-3">Проекты</h5>
+                <div class="table-responsive todo-table-shell">
+                    <table class="table table-bordered align-middle mb-0">
+                        <thead id="todoProjectsHead"></thead>
+                        <tbody id="todoProjectsBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="mb-5">
+                <h5 class="fw-bold mb-3">Исследования, PR и G&A</h5>
+                <div class="table-responsive todo-table-shell">
+                    <table class="table table-bordered align-middle mb-0">
+                        <thead id="todoResearchHead"></thead>
+                        <tbody id="todoResearchBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="mb-5">
+                <h5 class="fw-bold mb-3">Завершенные проекты</h5>
+                <div class="table-responsive todo-table-shell">
+                    <table class="table table-bordered align-middle mb-0">
+                        <thead id="todoCompletedHead"></thead>
+                        <tbody id="todoCompletedBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section>
+                <h5 class="fw-bold mb-3">Отменено</h5>
+                <div class="table-responsive todo-table-shell">
+                    <table class="table table-bordered align-middle mb-0">
+                        <thead id="todoCancelledHead"></thead>
+                        <tbody id="todoCancelledBody"></tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+    </div>
+{% endblock %}
+
+{% block stylesheets %}
+    {{ parent() }}
+    <style>
+        .todo-form-grid {
+            display: grid;
+            grid-template-columns: repeat(8, minmax(0, 1fr));
+            gap: 0.75rem;
+        }
+
+        .todo-table-shell {
+            min-height: calc(5 * 2.75rem + 3rem);
+            max-height: calc(50 * 2.75rem + 3rem);
+            overflow-y: auto;
+        }
+
+        .todo-table-shell thead th {
+            position: sticky;
+            top: 0;
+            background: #f8f9fa;
+            z-index: 1;
+        }
+
+        .todo-empty-row td {
+            height: 2.75rem;
+            background: #fff;
+        }
+
+        @media (max-width: 1600px) {
+            .todo-form-grid {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 900px) {
+            .todo-form-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+    </style>
+{% endblock %}
+
+{% block javascripts %}
+    {{ parent() }}
+    <script>
+        (function () {
+            const createUrl = '{{ path('demo_todo_list_create') }}';
+            const dataUrl = '{{ path('demo_todo_list_data') }}';
+            const columns = ['ID', 'Блок', 'Этап', 'Проект', 'Задача', 'Статус по задаче', 'Следующий шаг', 'Ответственный', 'Дата'];
+            const sectionMap = {
+                projects: {
+                    head: document.getElementById('todoProjectsHead'),
+                    body: document.getElementById('todoProjectsBody'),
+                },
+                research: {
+                    head: document.getElementById('todoResearchHead'),
+                    body: document.getElementById('todoResearchBody'),
+                },
+                completed: {
+                    head: document.getElementById('todoCompletedHead'),
+                    body: document.getElementById('todoCompletedBody'),
+                },
+                cancelled: {
+                    head: document.getElementById('todoCancelledHead'),
+                    body: document.getElementById('todoCancelledBody'),
+                },
+            };
+
+            const blockField = document.getElementById('todoBlock');
+            const stageField = document.getElementById('todoStage');
+            const projectField = document.getElementById('todoProject');
+            const taskField = document.getElementById('todoTask');
+            const taskStatusField = document.getElementById('todoTaskStatus');
+            const nextStepField = document.getElementById('todoNextStep');
+            const responsibleField = document.getElementById('todoResponsible');
+            const dateField = document.getElementById('todoDate');
+            const submitButton = document.getElementById('todoSubmitButton');
+
+            function escapeHtml(value) {
+                return String(value ?? '')
+                    .replaceAll('&', '&amp;')
+                    .replaceAll('<', '&lt;')
+                    .replaceAll('>', '&gt;')
+                    .replaceAll('"', '&quot;')
+                    .replaceAll("'", '&#039;');
+            }
+
+            function createHeaderHtml() {
+                return `<tr>${columns.map((column) => `<th>${column}</th>`).join('')}</tr>`;
+            }
+
+            function formatDate(value) {
+                if (typeof value !== 'string' || value.trim() === '') {
+                    return '';
+                }
+
+                const parts = value.split('-');
+                if (parts.length !== 3) {
+                    return value;
+                }
+
+                return `${parts[2]}.${parts[1]}.${parts[0]}`;
+            }
+
+            function createRowHtml(entry) {
+                return `
+                    <tr>
+                        <td>${escapeHtml(entry.id)}</td>
+                        <td>${escapeHtml(entry.block)}</td>
+                        <td>${escapeHtml(entry.stage)}</td>
+                        <td>${escapeHtml(entry.project)}</td>
+                        <td>${escapeHtml(entry.task)}</td>
+                        <td>${escapeHtml(entry.taskStatus)}</td>
+                        <td>${escapeHtml(entry.nextStep)}</td>
+                        <td>${escapeHtml(entry.responsible)}</td>
+                        <td>${escapeHtml(formatDate(entry.date))}</td>
+                    </tr>
+                `;
+            }
+
+            function renderSection(sectionKey, entries) {
+                const section = sectionMap[sectionKey];
+                if (!section) {
+                    return;
+                }
+
+                section.head.innerHTML = createHeaderHtml();
+
+                const normalizedEntries = Array.isArray(entries) ? entries : [];
+                const bodyRows = normalizedEntries.map((entry) => createRowHtml(entry));
+                const emptyRows = Math.max(0, 5 - normalizedEntries.length);
+                for (let i = 0; i < emptyRows; i++) {
+                    bodyRows.push(`<tr class="todo-empty-row">${'<td></td>'.repeat(columns.length)}</tr>`);
+                }
+
+                section.body.innerHTML = bodyRows.join('');
+            }
+
+            async function loadTodoTables() {
+                const response = await fetch(dataUrl);
+                if (!response.ok) {
+                    throw new Error('Failed to load todo list data');
+                }
+
+                const payload = await response.json();
+                renderSection('projects', payload.projects ?? []);
+                renderSection('research', payload.research ?? []);
+                renderSection('completed', payload.completed ?? []);
+                renderSection('cancelled', payload.cancelled ?? []);
+            }
+
+            function getPayload() {
+                return {
+                    block: String(blockField.value || '').trim(),
+                    stage: String(stageField.value || '').trim(),
+                    project: String(projectField.value || '').trim(),
+                    task: String(taskField.value || '').trim(),
+                    taskStatus: String(taskStatusField.value || '').trim(),
+                    nextStep: String(nextStepField.value || '').trim(),
+                    responsible: String(responsibleField.value || '').trim(),
+                    date: String(dateField.value || '').trim(),
+                };
+            }
+
+            function hasEmptyPayloadFields(payload) {
+                return Object.values(payload).some((value) => String(value).trim() === '');
+            }
+
+            function resetForm() {
+                blockField.value = '';
+                stageField.value = 'Инициация';
+                projectField.value = '';
+                taskField.value = '';
+                taskStatusField.value = '';
+                nextStepField.value = '';
+                responsibleField.value = '';
+                dateField.value = '';
+            }
+
+            submitButton.addEventListener('click', async function () {
+                const payload = getPayload();
+                if (hasEmptyPayloadFields(payload)) {
+                    alert('Все поля должны быть заполнены');
+                    return;
+                }
+
+                const response = await fetch(createUrl, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload),
+                });
+
+                if (response.status === 422) {
+                    alert('Все поля должны быть заполнены');
+                    return;
+                }
+
+                if (!response.ok) {
+                    alert('Не удалось создать запись');
+                    return;
+                }
+
+                resetForm();
+                await loadTodoTables();
+            });
+
+            loadTodoTables().catch(() => {
+                alert('Не удалось загрузить To-Do list');
+            });
+        })();
+    </script>
+{% endblock %}

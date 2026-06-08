@@ -46,6 +46,9 @@ final class MenuSubscriber implements EventSubscriberInterface
             $menu->addChild(
                 new MenuItemModel('demo_resource_plan', 'Ресурсный план', 'demo_resource_plan', [], 'fas fa-calendar-alt')
             );
+            $menu->addChild(
+                new MenuItemModel('demo_todo_list', 'To-Do list', 'demo_todo_list', [], 'fas fa-list-check')
+            );
         }
     }
 
