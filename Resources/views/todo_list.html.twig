@@ -268,7 +268,14 @@
             const updateUrlTemplate = '{{ path('demo_todo_list_update', {'id': 'ENTRY_ID'}) }}';
             const updateStageUrlTemplate = '{{ path('demo_todo_list_update_stage', {'id': 'ENTRY_ID'}) }}';
             const cancelUrlTemplate = '{{ path('demo_todo_list_cancel', {'id': 'ENTRY_ID'}) }}';
-            const columns = ['ID', 'Блок', 'Этап', 'Проект', 'Задача', 'Статус по задаче', 'Следующий шаг', 'Ответственный', 'Дата'];
+            const defaultColumns = ['ID', 'Блок', 'Этап', 'Проект', 'Задача', 'Статус по задаче', 'Следующий шаг', 'Ответственный', 'Дата'];
+            const sectionColumns = {
+                projectInitiations: ['ID', 'Блок', 'Этап', 'Подэтап', 'Проект', 'Задача', 'Статус по задаче', 'Следующий шаг', 'Ответственный', 'Дата'],
+                projectExecution: defaultColumns,
+                research: defaultColumns,
+                completed: defaultColumns,
+                cancelled: ['ID', 'Блок', 'Этап', 'Проект', 'Задача', 'Статус по задаче', 'Следующий шаг', 'Ответственный', 'Дата', 'Причина отмены'],
+            };
             const blockOptions = [
                 {value: 'Проекты', label: 'Проект'},
                 {value: 'Исследования', label: 'Исследование'},
@@ -350,9 +357,9 @@
 
                 return `${parts[2]}.${parts[1]}.${parts[0]}`;
             }
-
-            function createHeaderHtml() {
-                return `<tr>${columns.map((column) => `<th>${column}</th>`).join('')}</tr>`;
+            function createHeaderHtml(sectionKey) {
+                const columns = sectionColumns[sectionKey] ?? defaultColumns;
+                return `<tr>${columns.map((column) => `<th>${column}</th>`).join('')}<\/tr>`;
             }
 
             function findEntryById(id) {
@@ -391,24 +398,38 @@
             function createEditDate(field, value) {
                 return `<input class="form-control todo-row-edit-date" type="date" data-field="${field}" value="${escapeHtml(value)}">`;
             }
-
-            function createRowHtml(entry) {
+            function createRowHtml(sectionKey, entry) {
                 const isSelected = Number(state.selectedRowId) === Number(entry.id);
                 const isEditing = Number(state.editingRowId) === Number(entry.id);
                 const rowClass = isSelected ? 'todo-selected-row' : '';
                 const draft = isEditing && state.editDraft ? state.editDraft : entry;
 
+                const cells = [
+                    `<td>${escapeHtml(entry.id)}</td>`,
+                    `<td>${isEditing ? createBlockSelect(draft.block) : escapeHtml(entry.block)}</td>`,
+                    `<td>${escapeHtml(entry.stage)}</td>`,
+                ];
+
+                if (sectionKey === 'projectInitiations') {
+                    cells.push(`<td>${escapeHtml(entry.substage || '')}</td>`);
+                }
+
+                cells.push(
+                    `<td>${isEditing ? createEditTextarea('project', draft.project) : escapeHtml(entry.project)}</td>`,
+                    `<td>${isEditing ? createEditTextarea('task', draft.task) : escapeHtml(entry.task)}</td>`,
+                    `<td>${isEditing ? createEditTextarea('taskStatus', draft.taskStatus) : escapeHtml(entry.taskStatus)}</td>`,
+                    `<td>${isEditing ? createEditTextarea('nextStep', draft.nextStep) : escapeHtml(entry.nextStep)}</td>`,
+                    `<td>${isEditing ? createEditTextarea('responsible', draft.responsible) : escapeHtml(entry.responsible)}</td>`,
+                    `<td>${isEditing ? createEditDate('date', draft.date) : escapeHtml(formatDate(entry.date))}</td>`,
+                );
+
+                if (sectionKey === 'cancelled') {
+                    cells.push(`<td>${escapeHtml(entry.cancelReason || '')}</td>`);
+                }
+
                 return `
                     <tr class="${rowClass}" data-entry-id="${entry.id}">
-                        <td>${escapeHtml(entry.id)}</td>
-                        <td>${isEditing ? createBlockSelect(draft.block) : escapeHtml(entry.block)}</td>
-                        <td>${escapeHtml(entry.stage)}</td>
-                        <td>${isEditing ? createEditTextarea('project', draft.project) : escapeHtml(entry.project)}</td>
-                        <td>${isEditing ? createEditTextarea('task', draft.task) : escapeHtml(entry.task)}</td>
-                        <td>${isEditing ? createEditTextarea('taskStatus', draft.taskStatus) : escapeHtml(entry.taskStatus)}</td>
-                        <td>${isEditing ? createEditTextarea('nextStep', draft.nextStep) : escapeHtml(entry.nextStep)}</td>
-                        <td>${isEditing ? createEditTextarea('responsible', draft.responsible) : escapeHtml(entry.responsible)}</td>
-                        <td>${isEditing ? createEditDate('date', draft.date) : escapeHtml(formatDate(entry.date))}</td>
+                        ${cells.join('')}
                     </tr>
                 `;
             }
@@ -419,10 +440,11 @@
                     return;
                 }
 
-                section.head.innerHTML = createHeaderHtml();
+                const columns = sectionColumns[sectionKey] ?? defaultColumns;
+                section.head.innerHTML = createHeaderHtml(sectionKey);
 
                 const normalizedEntries = Array.isArray(entries) ? entries : [];
-                const rows = normalizedEntries.map((entry) => createRowHtml(entry));
+                const rows = normalizedEntries.map((entry) => createRowHtml(sectionKey, entry));
                 const emptyRows = Math.max(0, 5 - normalizedEntries.length);
                 for (let i = 0; i < emptyRows; i++) {
                     rows.push(`<tr class="todo-empty-row">${'<td></td>'.repeat(columns.length)}</tr>`);
