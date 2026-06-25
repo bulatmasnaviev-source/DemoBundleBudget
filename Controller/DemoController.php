@@ -159,7 +159,6 @@ final class DemoController extends AbstractController
 
         return new JsonResponse($this->todoListStorage->loadBuckets());
     }
-
     #[Route(path: '/todo-list/entries', name: 'demo_todo_list_create', methods: ['POST'])]
     public function createTodoListEntry(Request $request): JsonResponse
     {
@@ -168,6 +167,7 @@ final class DemoController extends AbstractController
         $payload = json_decode($request->getContent(), true);
         $block = $this->normalizeTodoListBlock((string) ($payload['block'] ?? ''));
         $stage = 'Инициация';
+        $substage = $this->normalizeTodoListSubstage((string) ($payload['substage'] ?? ''));
         $project = trim((string) ($payload['project'] ?? ''));
         $task = trim((string) ($payload['task'] ?? ''));
         $taskStatus = trim((string) ($payload['taskStatus'] ?? ''));
@@ -175,7 +175,7 @@ final class DemoController extends AbstractController
         $responsible = trim((string) ($payload['responsible'] ?? ''));
         $date = trim((string) ($payload['date'] ?? ''));
 
-        foreach ([$block, $stage, $project, $task, $taskStatus, $nextStep, $responsible, $date] as $value) {
+        foreach ([$block, $stage, $substage, $project, $task, $taskStatus, $nextStep, $responsible, $date] as $value) {
             if ($value === '') {
                 return new JsonResponse(['message' => 'Все поля должны быть заполнены'], Response::HTTP_UNPROCESSABLE_ENTITY);
             }
@@ -183,6 +183,7 @@ final class DemoController extends AbstractController
 
         $id = $this->todoListStorage->create([
             'stage' => $stage,
+            'substage' => $substage,
             'block' => $block,
             'project_name' => $project,
             'task_name' => $task,
@@ -190,6 +191,7 @@ final class DemoController extends AbstractController
             'next_step' => $nextStep,
             'responsible' => $responsible,
             'task_date' => $date,
+            'cancel_reason' => null,
             'created_at' => (new \DateTimeImmutable('today'))->format('Y-m-d'),
             'implementation_started_at' => null,
             'completion_started_at' => null,
@@ -210,6 +212,7 @@ final class DemoController extends AbstractController
 
         $payload = json_decode($request->getContent(), true);
         $block = $this->normalizeTodoListBlock((string) ($payload['block'] ?? ''));
+        $substage = $this->normalizeTodoListSubstage((string) ($payload['substage'] ?? ''));
         $project = trim((string) ($payload['project'] ?? ''));
         $task = trim((string) ($payload['task'] ?? ''));
         $taskStatus = trim((string) ($payload['taskStatus'] ?? ''));
@@ -217,7 +220,7 @@ final class DemoController extends AbstractController
         $responsible = trim((string) ($payload['responsible'] ?? ''));
         $date = trim((string) ($payload['date'] ?? ''));
 
-        foreach ([$block, $project, $task, $taskStatus, $nextStep, $responsible, $date] as $value) {
+        foreach ([$block, $substage, $project, $task, $taskStatus, $nextStep, $responsible, $date] as $value) {
             if ($value === '') {
                 return new JsonResponse(['message' => 'Все поля должны быть заполнены'], Response::HTTP_UNPROCESSABLE_ENTITY);
             }
@@ -225,6 +228,7 @@ final class DemoController extends AbstractController
 
         $this->todoListStorage->updateById($id, [
             'block' => $block,
+            'substage' => $substage,
             'project_name' => $project,
             'task_name' => $task,
             'task_status' => $taskStatus,
@@ -250,6 +254,22 @@ final class DemoController extends AbstractController
         $this->todoListStorage->updateStageById($id, $stage);
 
         return new JsonResponse(['message' => 'Stage updated']);
+    }
+
+    #[Route(path: '/todo-list/entries/{id}/cancel', name: 'demo_todo_list_cancel', methods: ['POST'])]
+    public function cancelTodoListEntry(int $id, Request $request): JsonResponse
+    {
+        $this->denyPlanningAccessUnlessGranted();
+
+        $payload = json_decode($request->getContent(), true);
+        $reason = trim((string) ($payload['reason'] ?? ''));
+        if ($reason === '') {
+            return new JsonResponse(['message' => 'Не указана причина отмены'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $this->todoListStorage->cancelById($id, $reason);
+
+        return new JsonResponse(['message' => 'Entry cancelled']);
     }
 
     private function buildEmployeeData(): array
@@ -518,7 +538,6 @@ final class DemoController extends AbstractController
             default => 'NEW',
         };
     }
-
     private function normalizeTodoListBlock(string $block): string
     {
         return match (trim($block)) {
@@ -534,6 +553,14 @@ final class DemoController extends AbstractController
     {
         return match (trim($stage)) {
             'Инициация', 'Реализация', 'Завершение', 'Завершено', 'Отменено' => trim($stage),
+            default => '',
+        };
+    }
+
+    private function normalizeTodoListSubstage(string $substage): string
+    {
+        return match (trim($substage)) {
+            'Инициация темы', 'Разработка ТЗ', 'Подготовка закупки', 'Формирование КП' => trim($substage),
             default => '',
         };
     }

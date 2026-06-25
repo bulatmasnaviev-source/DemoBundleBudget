@@ -3,6 +3,7 @@
 namespace KimaiPlugin\DemoBundle\Repository;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\ParameterType;
 
 final class TodoListStorage
 {
@@ -24,6 +25,7 @@ final class TodoListStorage
     {
         $this->connection->insert(self::TABLE, [
             'stage' => (string) ($data['stage'] ?? ''),
+            'substage' => (string) ($data['substage'] ?? ''),
             'block' => (string) ($data['block'] ?? ''),
             'project_name' => (string) ($data['project_name'] ?? ''),
             'task_name' => (string) ($data['task_name'] ?? ''),
@@ -31,6 +33,7 @@ final class TodoListStorage
             'next_step' => (string) ($data['next_step'] ?? ''),
             'responsible' => (string) ($data['responsible'] ?? ''),
             'task_date' => (string) ($data['task_date'] ?? ''),
+            'cancel_reason' => $data['cancel_reason'] ?? null,
             'created_at' => (string) ($data['created_at'] ?? ''),
             'implementation_started_at' => $data['implementation_started_at'] ?? null,
             'completion_started_at' => $data['completion_started_at'] ?? null,
@@ -45,6 +48,7 @@ final class TodoListStorage
     {
         $this->connection->update(self::TABLE, [
             'block' => (string) ($data['block'] ?? ''),
+            'substage' => (string) ($data['substage'] ?? ''),
             'project_name' => (string) ($data['project_name'] ?? ''),
             'task_name' => (string) ($data['task_name'] ?? ''),
             'task_status' => (string) ($data['task_status'] ?? ''),
@@ -61,6 +65,7 @@ final class TodoListStorage
 
         if ($stage === 'Инициация') {
             $updates['cancelled_at'] = null;
+            $updates['cancel_reason'] = null;
         } elseif ($stage === 'Реализация') {
             $updates['implementation_started_at'] = $today;
         } elseif ($stage === 'Завершение') {
@@ -74,23 +79,40 @@ final class TodoListStorage
         $types = [];
         foreach (array_keys($updates) as $column) {
             if (\in_array($column, self::DATE_COLUMNS, true)) {
-                $types[$column] = $updates[$column] === null ? \PDO::PARAM_NULL : \Doctrine\DBAL\ParameterType::STRING;
+                $types[$column] = $updates[$column] === null ? \PDO::PARAM_NULL : ParameterType::STRING;
+            } elseif ($column === 'cancel_reason' && $updates[$column] === null) {
+                $types[$column] = \PDO::PARAM_NULL;
             }
         }
 
         $this->connection->update(self::TABLE, $updates, ['id' => $id], $types);
     }
 
+    public function cancelById(int $id, string $reason): void
+    {
+        $today = (new \DateTimeImmutable('today'))->format('Y-m-d');
+
+        $this->connection->update(self::TABLE, [
+            'stage' => 'Отменено',
+            'cancel_reason' => $reason,
+            'cancelled_at' => $today,
+        ], ['id' => $id], [
+            'cancel_reason' => ParameterType::STRING,
+            'cancelled_at' => ParameterType::STRING,
+        ]);
+    }
+
     public function loadBuckets(): array
     {
         $rows = $this->connection->fetchAllAssociative(
-            'SELECT id, block, stage, project_name, task_name, task_status, next_step, responsible, task_date
+            'SELECT id, block, stage, substage, project_name, task_name, task_status, next_step, responsible, task_date, cancel_reason
              FROM ' . self::TABLE . '
              ORDER BY id DESC'
         );
 
         $result = [
-            'projects' => [],
+            'projectInitiations' => [],
+            'projectExecution' => [],
             'research' => [],
             'completed' => [],
             'cancelled' => [],
@@ -101,16 +123,23 @@ final class TodoListStorage
                 'id' => (int) ($row['id'] ?? 0),
                 'block' => (string) ($row['block'] ?? ''),
                 'stage' => (string) ($row['stage'] ?? ''),
+                'substage' => (string) ($row['substage'] ?? ''),
                 'project' => (string) ($row['project_name'] ?? ''),
                 'task' => (string) ($row['task_name'] ?? ''),
                 'taskStatus' => (string) ($row['task_status'] ?? ''),
                 'nextStep' => (string) ($row['next_step'] ?? ''),
                 'responsible' => (string) ($row['responsible'] ?? ''),
                 'date' => (string) ($row['task_date'] ?? ''),
+                'cancelReason' => (string) ($row['cancel_reason'] ?? ''),
             ];
 
-            if ($normalized['block'] === 'Проекты' && \in_array($normalized['stage'], ['Инициация', 'Реализация', 'Завершение'], true)) {
-                $result['projects'][] = $normalized;
+            if ($normalized['block'] === 'Проекты' && $normalized['stage'] === 'Инициация') {
+                $result['projectInitiations'][] = $normalized;
+                continue;
+            }
+
+            if ($normalized['block'] === 'Проекты' && \in_array($normalized['stage'], ['Реализация', 'Завершение'], true)) {
+                $result['projectExecution'][] = $normalized;
                 continue;
             }
 

@@ -18,12 +18,22 @@
                             <option value="Проекты">Проект</option>
                             <option value="Исследования">Исследование</option>
                             <option value="PR">PR</option>
-                            <option value="G&A">G&A</option>
+                            <option value="G&A">G&amp;A</option>
                         </select>
                     </div>
                     <div>
                         <label class="form-label" for="todoStage">Этап</label>
                         <input id="todoStage" class="form-control todo-stage-field" type="text" value="Инициация" readonly>
+                    </div>
+                    <div>
+                        <label class="form-label" for="todoSubstage">Подэтап</label>
+                        <select id="todoSubstage" class="form-select">
+                            <option value=""></option>
+                            <option value="Инициация темы">Инициация темы</option>
+                            <option value="Разработка ТЗ">Разработка ТЗ</option>
+                            <option value="Подготовка закупки">Подготовка закупки</option>
+                            <option value="Формирование КП">Формирование КП</option>
+                        </select>
                     </div>
                     <div>
                         <label class="form-label" for="todoProject">Проект</label>
@@ -62,7 +72,7 @@
             </section>
 
             <section class="mb-5">
-                <h5 class="fw-bold mb-3">Проекты</h5>
+                <h5 class="fw-bold mb-3">Проекты (инициации)</h5>
                 <div class="table-responsive todo-table-shell">
                     <table class="table table-bordered align-middle mb-0 todo-data-table">
                         <thead id="todoProjectsHead"></thead>
@@ -72,7 +82,17 @@
             </section>
 
             <section class="mb-5">
-                <h5 class="fw-bold mb-3">Исследования, PR и G&A</h5>
+                <h5 class="fw-bold mb-3">Проекты (реализация)</h5>
+                <div class="table-responsive todo-table-shell">
+                    <table class="table table-bordered align-middle mb-0 todo-data-table">
+                        <thead id="todoProjectExecutionHead"></thead>
+                        <tbody id="todoProjectExecutionBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="mb-5">
+                <h5 class="fw-bold mb-3">Исследования, PR и G&amp;A</h5>
                 <div class="table-responsive todo-table-shell">
                     <table class="table table-bordered align-middle mb-0 todo-data-table">
                         <thead id="todoResearchHead"></thead>
@@ -102,6 +122,17 @@
             </section>
         </div>
     </div>
+
+    <div id="todoCancelModal" class="todo-modal-backdrop" hidden>
+        <div class="todo-modal">
+            <h5 class="fw-bold mb-3">Выберите причину отмены инициации</h5>
+            <textarea id="todoCancelReason" class="form-control mb-3" rows="4"></textarea>
+            <div class="d-flex justify-content-end gap-2">
+                <button id="todoCancelCloseButton" type="button" class="btn btn-outline-secondary">Закрыть</button>
+                <button id="todoCancelSubmitButton" type="button" class="btn btn-outline-dark">Отправить</button>
+            </div>
+        </div>
+    </div>
 {% endblock %}
 
 {% block stylesheets %}
@@ -109,7 +140,7 @@
     <style>
         .todo-form-grid {
             display: grid;
-            grid-template-columns: repeat(8, minmax(0, 1fr));
+            grid-template-columns: repeat(9, minmax(0, 1fr));
             gap: 0.75rem;
             align-items: start;
         }
@@ -123,7 +154,7 @@
             width: 100%;
             min-height: 2.375rem;
             resize: vertical;
-            overflow: hidden;
+            overflow-y: hidden;
         }
 
         .todo-table-shell {
@@ -182,19 +213,45 @@
         }
 
         .todo-row-edit-field,
-        .todo-row-edit-select {
+        .todo-row-edit-select,
+        .todo-row-edit-date {
             width: 100%;
             min-height: 2.25rem;
             resize: vertical;
         }
 
-        @media (max-width: 1600px) {
+        .todo-modal-backdrop {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+            background: rgba(0, 0, 0, 0.45);
+            z-index: 2000;
+        }
+
+        .todo-modal {
+            width: min(100%, 34rem);
+            background: #fff;
+            border-radius: 0.75rem;
+            padding: 1.25rem;
+            box-shadow: 0 1.25rem 3rem rgba(0, 0, 0, 0.2);
+        }
+
+        @media (max-width: 1800px) {
             .todo-form-grid {
-                grid-template-columns: repeat(4, minmax(0, 1fr));
+                grid-template-columns: repeat(5, minmax(0, 1fr));
             }
         }
 
-        @media (max-width: 900px) {
+        @media (max-width: 1200px) {
+            .todo-form-grid {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 768px) {
             .todo-form-grid {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
@@ -210,6 +267,7 @@
             const dataUrl = '{{ path('demo_todo_list_data') }}';
             const updateUrlTemplate = '{{ path('demo_todo_list_update', {'id': 'ENTRY_ID'}) }}';
             const updateStageUrlTemplate = '{{ path('demo_todo_list_update_stage', {'id': 'ENTRY_ID'}) }}';
+            const cancelUrlTemplate = '{{ path('demo_todo_list_cancel', {'id': 'ENTRY_ID'}) }}';
             const columns = ['ID', 'Блок', 'Этап', 'Проект', 'Задача', 'Статус по задаче', 'Следующий шаг', 'Ответственный', 'Дата'];
             const blockOptions = [
                 {value: 'Проекты', label: 'Проект'},
@@ -219,13 +277,20 @@
             ];
             const stageSequence = ['Инициация', 'Реализация', 'Завершение', 'Завершено'];
             const sectionMap = {
-                projects: { head: document.getElementById('todoProjectsHead'), body: document.getElementById('todoProjectsBody') },
+                projectInitiations: { head: document.getElementById('todoProjectsHead'), body: document.getElementById('todoProjectsBody') },
+                projectExecution: { head: document.getElementById('todoProjectExecutionHead'), body: document.getElementById('todoProjectExecutionBody') },
                 research: { head: document.getElementById('todoResearchHead'), body: document.getElementById('todoResearchBody') },
                 completed: { head: document.getElementById('todoCompletedHead'), body: document.getElementById('todoCompletedBody') },
                 cancelled: { head: document.getElementById('todoCancelledHead'), body: document.getElementById('todoCancelledBody') },
             };
             const state = {
-                buckets: {projects: [], research: [], completed: [], cancelled: []},
+                buckets: {
+                    projectInitiations: [],
+                    projectExecution: [],
+                    research: [],
+                    completed: [],
+                    cancelled: [],
+                },
                 selectedRowId: null,
                 editingRowId: null,
                 editDraft: null,
@@ -233,6 +298,7 @@
 
             const blockField = document.getElementById('todoBlock');
             const stageField = document.getElementById('todoStage');
+            const substageField = document.getElementById('todoSubstage');
             const projectField = document.getElementById('todoProject');
             const taskField = document.getElementById('todoTask');
             const taskStatusField = document.getElementById('todoTaskStatus');
@@ -246,6 +312,10 @@
             const previousStageButton = document.getElementById('todoPreviousStageButton');
             const cancelButton = document.getElementById('todoCancelButton');
             const returnButton = document.getElementById('todoReturnButton');
+            const cancelModal = document.getElementById('todoCancelModal');
+            const cancelReasonField = document.getElementById('todoCancelReason');
+            const cancelCloseButton = document.getElementById('todoCancelCloseButton');
+            const cancelSubmitButton = document.getElementById('todoCancelSubmitButton');
 
             function getUpdateUrl(id) {
                 return updateUrlTemplate.replace('ENTRY_ID', String(id));
@@ -253,6 +323,10 @@
 
             function getStageUpdateUrl(id) {
                 return updateStageUrlTemplate.replace('ENTRY_ID', String(id));
+            }
+
+            function getCancelUrl(id) {
+                return cancelUrlTemplate.replace('ENTRY_ID', String(id));
             }
 
             function escapeHtml(value) {
@@ -358,7 +432,8 @@
             }
 
             function renderAllSections() {
-                renderSection('projects', state.buckets.projects ?? []);
+                renderSection('projectInitiations', state.buckets.projectInitiations ?? []);
+                renderSection('projectExecution', state.buckets.projectExecution ?? []);
                 renderSection('research', state.buckets.research ?? []);
                 renderSection('completed', state.buckets.completed ?? []);
                 renderSection('cancelled', state.buckets.cancelled ?? []);
@@ -373,7 +448,8 @@
 
                 const payload = await response.json();
                 state.buckets = {
-                    projects: Array.isArray(payload.projects) ? payload.projects : [],
+                    projectInitiations: Array.isArray(payload.projectInitiations) ? payload.projectInitiations : [],
+                    projectExecution: Array.isArray(payload.projectExecution) ? payload.projectExecution : [],
                     research: Array.isArray(payload.research) ? payload.research : [],
                     completed: Array.isArray(payload.completed) ? payload.completed : [],
                     cancelled: Array.isArray(payload.cancelled) ? payload.cancelled : [],
@@ -394,6 +470,7 @@
                 return {
                     block: String(blockField.value || '').trim(),
                     stage: String(stageField.value || '').trim(),
+                    substage: String(substageField.value || '').trim(),
                     project: String(projectField.value || '').trim(),
                     task: String(taskField.value || '').trim(),
                     taskStatus: String(taskStatusField.value || '').trim(),
@@ -410,6 +487,7 @@
             function resetForm() {
                 blockField.value = '';
                 stageField.value = 'Инициация';
+                substageField.value = '';
                 projectField.value = '';
                 taskField.value = '';
                 taskStatusField.value = '';
@@ -441,6 +519,7 @@
                     id: entry.id,
                     block: entry.block,
                     stage: entry.stage,
+                    substage: entry.substage || '',
                     project: entry.project,
                     task: entry.task,
                     taskStatus: entry.taskStatus,
@@ -448,6 +527,8 @@
                     responsible: entry.responsible,
                     date: entry.date,
                 };
+
+                substageField.value = state.editDraft.substage;
                 renderAllSections();
             }
 
@@ -456,8 +537,11 @@
                     return;
                 }
 
+                state.editDraft.substage = String(substageField.value || '').trim();
+
                 const payload = {
                     block: String(state.editDraft.block || '').trim(),
+                    substage: String(state.editDraft.substage || '').trim(),
                     project: String(state.editDraft.project || '').trim(),
                     task: String(state.editDraft.task || '').trim(),
                     taskStatus: String(state.editDraft.taskStatus || '').trim(),
@@ -490,6 +574,7 @@
                 const selectedId = state.selectedRowId;
                 state.editingRowId = null;
                 state.editDraft = null;
+                resetForm();
                 await loadTodoTables();
                 state.selectedRowId = selectedId;
                 renderAllSections();
@@ -539,6 +624,54 @@
                 }
 
                 const selectedId = state.selectedRowId;
+                state.editingRowId = null;
+                state.editDraft = null;
+                await loadTodoTables();
+                state.selectedRowId = selectedId;
+                renderAllSections();
+            }
+
+            function openCancelModal() {
+                cancelReasonField.value = '';
+                cancelModal.hidden = false;
+                cancelReasonField.focus();
+            }
+
+            function closeCancelModal() {
+                cancelModal.hidden = true;
+                cancelReasonField.value = '';
+            }
+
+            async function submitCancellation() {
+                const entry = getSelectedEntry();
+                if (!entry) {
+                    return;
+                }
+
+                const reason = String(cancelReasonField.value || '').trim();
+                if (reason === '') {
+                    alert('Все поля должны быть заполнены');
+                    return;
+                }
+
+                const response = await fetch(getCancelUrl(entry.id), {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({reason}),
+                });
+
+                if (response.status === 422) {
+                    alert('Все поля должны быть заполнены');
+                    return;
+                }
+
+                if (!response.ok) {
+                    alert('Не удалось отменить запись');
+                    return;
+                }
+
+                const selectedId = state.selectedRowId;
+                closeCancelModal();
                 state.editingRowId = null;
                 state.editDraft = null;
                 await loadTodoTables();
@@ -653,13 +786,13 @@
                 await updateSelectedStage(getPreviousStage(entry.stage));
             });
 
-            cancelButton.addEventListener('click', async function () {
+            cancelButton.addEventListener('click', function () {
                 const entry = getSelectedEntry();
                 if (!entry) {
                     return;
                 }
 
-                await updateSelectedStage('Отменено');
+                openCancelModal();
             });
 
             returnButton.addEventListener('click', async function () {
@@ -669,6 +802,20 @@
                 }
 
                 await updateSelectedStage('Инициация');
+            });
+
+            cancelCloseButton.addEventListener('click', function () {
+                closeCancelModal();
+            });
+
+            cancelSubmitButton.addEventListener('click', async function () {
+                await submitCancellation();
+            });
+
+            cancelModal.addEventListener('click', function (event) {
+                if (event.target === cancelModal) {
+                    closeCancelModal();
+                }
             });
 
             initAutoResize(document.querySelectorAll('.todo-auto-field'));
