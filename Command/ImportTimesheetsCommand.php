@@ -25,6 +25,9 @@ final class ImportTimesheetsCommand extends Command
     private const ACTIVITY_NAME = 'Реализация';
     private const EXCEL_DATE_BASE = '1899-12-30';
     private const BATCH_SIZE = 100;
+    private const XLSX_NAMESPACE = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+    private const XLSX_REL_NAMESPACE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+    private const XLSX_PACKAGE_REL_NAMESPACE = 'http://schemas.openxmlformats.org/package/2006/relationships';
 
     public function __construct(private readonly EntityManagerInterface $entityManager)
     {
@@ -207,7 +210,7 @@ final class ImportTimesheetsCommand extends Command
                 throw new \RuntimeException('Worksheet XML is invalid');
             }
 
-            $xml->registerXPathNamespace('main', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
+            $xml->registerXPathNamespace('main', self::XLSX_NAMESPACE);
             $rows = $xml->xpath('/main:worksheet/main:sheetData/main:row');
             if (!is_array($rows) || $rows === []) {
                 return [];
@@ -263,7 +266,7 @@ final class ImportTimesheetsCommand extends Command
             return [];
         }
 
-        $sharedStringsXml->registerXPathNamespace('main', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
+        $sharedStringsXml->registerXPathNamespace('main', self::XLSX_NAMESPACE);
         $items = $sharedStringsXml->xpath('/main:sst/main:si');
         if (!is_array($items)) {
             return [];
@@ -276,16 +279,8 @@ final class ImportTimesheetsCommand extends Command
                 continue;
             }
 
-            $textNodes = $item->xpath('.//main:t');
-            if (!is_array($textNodes) || $textNodes === []) {
-                $strings[] = '';
-                continue;
-            }
-
             $value = '';
-            foreach ($textNodes as $textNode) {
-                $value .= (string) $textNode;
-            }
+            $this->appendTextRecursively($item, $value);
 
             $strings[] = $value;
         }
@@ -308,15 +303,15 @@ final class ImportTimesheetsCommand extends Command
             throw new \RuntimeException('Workbook metadata is invalid');
         }
 
-        $workbook->registerXPathNamespace('main', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
-        $relations->registerXPathNamespace('rel', 'http://schemas.openxmlformats.org/package/2006/relationships');
+        $workbook->registerXPathNamespace('main', self::XLSX_NAMESPACE);
+        $relations->registerXPathNamespace('rel', self::XLSX_PACKAGE_REL_NAMESPACE);
 
         $sheetNodes = $workbook->xpath('/main:workbook/main:sheets/main:sheet');
         if (!is_array($sheetNodes) || $sheetNodes === []) {
             throw new \RuntimeException('Workbook contains no sheets');
         }
 
-        $sheetId = (string) ($sheetNodes[0]->attributes('http://schemas.openxmlformats.org/officeDocument/2006/relationships')['id'] ?? '');
+        $sheetId = (string) ($sheetNodes[0]->attributes(self::XLSX_REL_NAMESPACE)['id'] ?? '');
         if ($sheetId === '') {
             throw new \RuntimeException('Cannot resolve first worksheet id');
         }
@@ -352,7 +347,7 @@ final class ImportTimesheetsCommand extends Command
      */
     private function extractRowValues(\SimpleXMLElement $row, array $sharedStrings): array
     {
-        $row->registerXPathNamespace('main', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
+        $row->registerXPathNamespace('main', self::XLSX_NAMESPACE);
         $cells = $row->xpath('./main:c');
         if (!is_array($cells)) {
             return [];
@@ -374,11 +369,9 @@ final class ImportTimesheetsCommand extends Command
             $value = '';
 
             if ($type === 'inlineStr') {
-                $textNodes = $cell->xpath('./main:is/main:t');
-                if (is_array($textNodes)) {
-                    foreach ($textNodes as $textNode) {
-                        $value .= (string) $textNode;
-                    }
+                $isNode = $cell->children(self::XLSX_NAMESPACE)->is;
+                if ($isNode instanceof \SimpleXMLElement) {
+                    $this->appendTextRecursively($isNode, $value);
                 }
             } else {
                 $valueNode = $cell->xpath('./main:v');
@@ -393,6 +386,20 @@ final class ImportTimesheetsCommand extends Command
         }
 
         return $values;
+    }
+
+    private function appendTextRecursively(\SimpleXMLElement $element, string &$buffer): void
+    {
+        $name = $element->getName();
+        if ($name === 't') {
+            $buffer .= (string) $element;
+        }
+
+        foreach ($element->children(self::XLSX_NAMESPACE) as $child) {
+            if ($child instanceof \SimpleXMLElement) {
+                $this->appendTextRecursively($child, $buffer);
+            }
+        }
     }
 
     /**
