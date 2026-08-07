@@ -374,8 +374,8 @@ final class ImportTimesheetsCommand extends Command
                     $this->appendTextRecursively($isNode, $value);
                 }
             } else {
-                $valueNode = $cell->xpath('./main:v');
-                $value = is_array($valueNode) && isset($valueNode[0]) ? (string) $valueNode[0] : '';
+                $valueNode = $cell->children(self::XLSX_NAMESPACE)->v;
+                $value = $valueNode instanceof \SimpleXMLElement ? (string) $valueNode : '';
                 if ($type === 's') {
                     $sharedIndex = (int) $value;
                     $value = $sharedStrings[$sharedIndex] ?? '';
@@ -556,7 +556,7 @@ final class ImportTimesheetsCommand extends Command
         return $hours;
     }
 
-    private function normalizeExcelDate(mixed $value): ?\DateTimeImmutable
+    private function normalizeExcelDate(mixed $value): ?\DateTime
     {
         if (is_string($value)) {
             $trimmed = trim($value);
@@ -568,7 +568,7 @@ final class ImportTimesheetsCommand extends Command
                 $value = (float) str_replace(',', '.', $trimmed);
             } else {
                 try {
-                    return new \DateTimeImmutable($trimmed);
+                    return new \DateTime($trimmed);
                 } catch (\Throwable) {
                     return null;
                 }
@@ -580,19 +580,19 @@ final class ImportTimesheetsCommand extends Command
         }
 
         $days = (int) floor((float) $value);
-        return (new \DateTimeImmutable(self::EXCEL_DATE_BASE))->modify('+' . $days . ' days');
+        return (new \DateTime(self::EXCEL_DATE_BASE))->modify('+' . $days . ' days');
     }
 
     private function createTimesheet(
         User $user,
         Project $project,
         Activity $activity,
-        \DateTimeImmutable $date,
+        \DateTime $date,
         float $hours
     ): Timesheet {
         $duration = (int) round($hours * 3600);
-        $begin = $date->setTime(0, 0, 0);
-        $end = $begin->modify('+' . $duration . ' seconds');
+        $begin = (clone $date)->setTime(0, 0, 0);
+        $end = (clone $begin)->modify('+' . $duration . ' seconds');
 
         $timesheet = new Timesheet();
         $timesheet->setUser($user);
