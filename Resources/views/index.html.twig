@@ -7,8 +7,8 @@
         </div>
         <div class="card-body">
             <div class="mb-4">
-                <h4 class="fs-4 fw-bold mb-2">Активные проекты и статус базового плана</h4>
-                <div class="table-responsive" style="max-height: 760px; overflow-y: auto;">
+                <h4 class="fs-4 fw-bold mb-2">Активные проекты и статус исходного плана</h4>
+                <div class="table-responsive" style="max-height: 27rem; overflow-y: auto;">
                     <table class="table table-sm table-bordered mb-0">
                         <thead>
                             <tr>
@@ -60,9 +60,12 @@
                 </div>
             </div>
 
+            <div class="border-top border-bottom py-2 mb-3">
+                <h4 class="display-6 fw-bold mb-2">Исходный план</h4>
             <div class="d-flex align-items-center gap-2 mb-2">
-                <strong>Статус базового плана:</strong>
+                <strong>Статус исходного плана:</strong>
                 <span id="planStatusLabel" class="fw-bold">Новый</span>
+            </div>
             </div>
 
             <div class="d-flex flex-wrap gap-2 mb-3">
@@ -72,20 +75,24 @@
             </div>
 
             <div class="table-responsive">
-                <table class="table table-bordered align-middle" id="budgetTable" style="table-layout: fixed; width: auto;">
+                <table class="table table-bordered align-middle" id="budgetTable" style="table-layout: fixed; width: 100%;">
                     <thead id="budgetTableHead"></thead>
                     <tbody id="budgetTableBody"></tbody>
-                    <tfoot><tr id="summaryRow"><th colspan="2">Сумма (ставка × часы)</th></tr></tfoot>
+                    <tfoot><tr id="summaryRow"><th colspan="3">Сумма (ставка × часы)</th></tr></tfoot>
                 </table>
             </div>
 
-            <div class="d-flex flex-column align-items-start gap-2 mt-3">
-                <button id="addRowButton" type="button" class="btn btn-outline-primary">+</button>
-                <button id="buildChartButton" type="button" class="btn btn-success">OK</button>
+            <div class="d-flex align-items-center gap-2 mt-3 flex-wrap">
+                <button id="addRowButton" type="button" class="btn btn-outline-primary">+ Сотрудник</button>
+                <button id="addWorkingRowButton" type="button" class="btn btn-outline-primary">+ Сотрудник</button>
+                <button id="saveWorkingPlanButton" type="button" class="btn btn-success">Сохранить Текущий план</button>
+                <button id="rebuildWorkingPlanChartButton" type="button" class="btn btn-secondary">Перестроить график</button>
+                <button id="loadSavedWorkingPlanButton" type="button" class="btn btn-outline-dark">Последний сохр. Текущий план</button>
+                <button id="sendToResourcePlanButton" type="button" class="btn btn-primary">Отправить на ресурсный план</button>
             </div>
 
             <div class="table-responsive mt-3">
-                <table class="table table-bordered align-middle" id="actualTable" style="table-layout: fixed; width: auto;">
+                <table class="table table-bordered align-middle" id="actualTable" style="table-layout: fixed; width: 100%;">
                     <thead id="actualTableHead"></thead>
                     <tbody id="actualTableBody"></tbody>
                     <tfoot><tr id="actualSummaryRow"><th colspan="2">Факт (таймшиты, часы × ставка)</th></tr></tfoot>
@@ -93,10 +100,10 @@
             </div>
 
             <div class="mt-4">
-                <h4 class="h5 mb-2">Сравнение базового плана и фактического расхода бюджета</h4>
+                <h4 class="display-6 fw-bold mb-2">Сравнение Исходного, Текущего и Ресурсного планов</h4>
                 <div class="small mb-2">
-                    <span style="color:#206bc4;">● Синяя линия — базовый план</span>
-                    <span class="ms-3" style="color:#000000;">● Черная линия — фактический расход</span>
+                    <span style="color:#206bc4;">● Синяя линия — исходный план</span>
+                    <span class="ms-3" style="color:#000000;">● Черная линия — текущий план</span>
                 </div>
                 <div class="border rounded p-2" style="max-width: 1000px;">
                     <svg id="budgetChart" width="100%" height="360" viewBox="0 0 1000 360" preserveAspectRatio="xMinYMin meet" role="img" aria-label="График расходования бюджета"></svg>
@@ -116,6 +123,11 @@
             const planGetUrlTemplate = '{{ path('demo_budget_plan_get', {'project': 'PROJECT_ID'}) }}';
             const planStatusUrlTemplate = '{{ path('demo_budget_plan_status', {'project': 'PROJECT_ID'}) }}';
             const actualCostsUrlTemplate = '{{ path('demo_budget_plan_actual_costs', {'project': 'PROJECT_ID'}) }}';
+            const resourcePlanGetUrlTemplate = '{{ path('demo_resource_plan_get', {'intervalId': 'INTERVAL_ID'}) }}';
+            const resourcePlanBulkUrl = '{{ path('demo_resource_plan_bulk') }}';
+            const resourcePlanStatusUrlTemplate = '{{ path('demo_resource_plan_status', {'intervalId': 'INTERVAL_ID'}) }}';
+            const workingPlanGetUrlTemplate = '{{ path('demo_working_plan_get', {'project': 'PROJECT_ID'}) }}';
+            const workingPlanSaveUrlTemplate = '{{ path('demo_working_plan_save', {'project': 'PROJECT_ID'}) }}';
 
             const STATUS = {
                 NEW: {label: 'Новый', color: '#000000', locked: false},
@@ -124,7 +136,7 @@
                 REJECTED: {label: 'Отклонено', color: '#ffc107', locked: false}
             };
 
-            const state = {weeks: [], activeProject: null, activeBudget: 0, status: 'NEW', actualMatrix: {}, actualTotals: []};
+            const state = {weeks: [], additionalPeriods: 0, activeProject: null, activeBudget: 0, status: 'NEW', actualWeeks: [], actualMatrix: {}, actualTotals: [], resourcePlanTotals: [], actualOverrides: {}, currentResourcePlan: {intervalId: null, status: 'NEW', cells: {}}, resourcePlansByInterval: {}, workingPlanRows: [], savedWorkingPlanRows: null, hasSavedWorkingPlan: false};
             const employeeMap = new Map(employees.map((employee) => [String(employee.id), employee]));
 
             const projectSelect = document.getElementById('projectSelect');
@@ -137,31 +149,342 @@
             const summaryRow = document.getElementById('summaryRow');
             const chartSvg = document.getElementById('budgetChart');
             const addRowButton = document.getElementById('addRowButton');
+            const addWorkingRowButton = document.getElementById('addWorkingRowButton');
+            const saveWorkingPlanButton = document.getElementById('saveWorkingPlanButton');
+            const rebuildWorkingPlanChartButton = document.getElementById('rebuildWorkingPlanChartButton');
+            const loadSavedWorkingPlanButton = document.getElementById('loadSavedWorkingPlanButton');
+            const sendToResourcePlanButton = document.getElementById('sendToResourcePlanButton');
             const activeStatusTableBody = document.getElementById('activeStatusTableBody');
             const actualTableHead = document.getElementById('actualTableHead');
             const actualTableBody = document.getElementById('actualTableBody');
             const actualSummaryRow = document.getElementById('actualSummaryRow');
 
+            function createSectionTitle(text) {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'border-top border-bottom py-2 mb-3';
+                const title = document.createElement('h4');
+                title.className = 'display-6 fw-bold mb-0';
+                title.textContent = text;
+                wrapper.appendChild(title);
+
+                return wrapper;
+            }
+
+            function getRowsMaxLength(rows = []) {
+                return rows.reduce((maxLength, row) => {
+                    const rowLength = Array.isArray(row?.hours) ? row.hours.length : 0;
+                    return Math.max(maxLength, rowLength);
+                }, 0);
+            }
+
+            function setupManagementLayout() {
+                addRowButton.textContent = '+ Сотрудник';
+                addWorkingRowButton.textContent = '+ Сотрудник';
+                saveWorkingPlanButton.textContent = 'Сохранить Текущий план';
+                loadSavedWorkingPlanButton.textContent = 'Последний сохр. Текущий план';
+
+                const statusRow = planStatusLabel.parentElement;
+                const statusContainer = statusRow?.parentElement;
+                if (statusRow && statusContainer && !statusContainer.classList.contains('border-top')) {
+                    const section = document.createElement('div');
+                    section.className = 'border-top border-bottom py-2 mb-3';
+                    const title = document.createElement('h4');
+                    title.className = 'display-6 fw-bold mb-2';
+                    title.textContent = 'Исходный план';
+                    section.appendChild(title);
+                    section.appendChild(statusRow);
+                    statusContainer.parentElement?.insertBefore(section, statusContainer);
+                    statusContainer.remove();
+                }
+
+                const approvalRow = document.getElementById('sendForApprovalButton')?.parentElement;
+                if (approvalRow && addRowButton.parentElement !== approvalRow) {
+                    approvalRow.appendChild(addRowButton);
+                }
+
+                const workingButtonRow = saveWorkingPlanButton.parentElement;
+                if (workingButtonRow) {
+                    workingButtonRow.className = 'd-flex flex-wrap gap-2 mb-3';
+
+                    [saveWorkingPlanButton, rebuildWorkingPlanChartButton, loadSavedWorkingPlanButton, sendToResourcePlanButton].forEach((button) => {
+                        button.className = 'btn btn-outline-dark working-plan-action';
+                        button.style.width = '15rem';
+                    });
+
+                    const workingTitle = createSectionTitle('Текущий план');
+                    workingButtonRow.parentElement?.insertBefore(workingTitle, workingButtonRow);
+
+                    const addWorkingRow = document.createElement('div');
+                    addWorkingRow.className = 'd-flex flex-wrap gap-2 mb-3';
+                    addWorkingRow.appendChild(addWorkingRowButton);
+                    workingButtonRow.insertAdjacentElement('afterend', addWorkingRow);
+                }
+
+                const comparisonSection = chartSvg.closest('.mt-4');
+                if (comparisonSection) {
+                    comparisonSection.classList.add('pt-2');
+                    const title = comparisonSection.querySelector('h4');
+                    if (title) {
+                        title.className = 'display-6 fw-bold mb-2';
+                        title.textContent = 'Сравнение Исходного, Текущего и Ресурсного планов';
+                    }
+
+                    const legend = comparisonSection.querySelector('.small');
+                    if (legend && !legend.querySelector('[data-chart-legend="green"]')) {
+                        const greenLegend = document.createElement('span');
+                        greenLegend.className = 'ms-3';
+                        greenLegend.dataset.chartLegend = 'green';
+                        greenLegend.style.color = '#2fb344';
+                        greenLegend.textContent = '● Зеленая линия — ресурсный план';
+                        legend.appendChild(greenLegend);
+                    }
+                }
+
+                if (!document.getElementById('workingPlanPeriodControls')) {
+                    const controls = document.createElement('div');
+                    controls.id = 'workingPlanPeriodControls';
+                    controls.className = 'd-flex justify-content-end gap-2 mb-2';
+                    controls.innerHTML = `
+                        <button id="addPeriodButton" type="button" class="btn btn-outline-dark" style="width:2.5rem;height:2.5rem;padding:0;">+</button>
+                        <button id="removePeriodButton" type="button" class="btn btn-outline-dark" style="width:2.5rem;height:2.5rem;padding:0;">x</button>
+                    `;
+                    const actualTableContainer = actualTableHead.closest('.table-responsive');
+                    actualTableContainer?.parentElement?.insertBefore(controls, actualTableContainer);
+                }
+
+                if (!document.getElementById('workingPlanDuplicateWarning')) {
+                    const modal = document.createElement('div');
+                    modal.id = 'workingPlanDuplicateWarning';
+                    modal.className = 'position-fixed top-0 start-0 w-100 h-100 d-none';
+                    modal.style.backgroundColor = 'rgba(0, 0, 0, 0.35)';
+                    modal.style.zIndex = '1050';
+                    modal.innerHTML = `
+                        <div class="bg-white rounded shadow p-4 position-absolute top-50 start-50 translate-middle" style="max-width: 34rem; width: calc(100% - 2rem);">
+                            <p class="mb-4">В Текущем плане сотрудники указаны дважды или более раз. Изменения не сохранены</p>
+                            <div class="d-flex justify-content-end">
+                                <button id="workingPlanDuplicateWarningClose" type="button" class="btn btn-outline-dark">Понял, принял</button>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+                    document.getElementById('workingPlanDuplicateWarningClose')?.addEventListener('click', function () {
+                        modal.classList.add('d-none');
+                    });
+                }
+            }
+
+            setupManagementLayout();
+
+            const resourcePlanSummaryRow = (() => {
+                const row = document.createElement('tr');
+                row.id = 'resourcePlanSummaryRow';
+                row.innerHTML = '<th colspan="2">Ресурсный план</th>';
+                actualSummaryRow.parentElement?.appendChild(row);
+
+                return row;
+            })();
+
+            actualSummaryRow.querySelector('th')?.setAttribute('colspan', '3');
+            if (actualSummaryRow.querySelector('th')) {
+                actualSummaryRow.querySelector('th').textContent = 'Текущий план (часы × ставка)';
+            }
+            resourcePlanSummaryRow.querySelector('th')?.setAttribute('colspan', '3');
+
+            const COLUMN_WIDTH = {
+                employee: '16rem',
+                rate: '8rem',
+                actions: '6rem',
+                period: '9rem',
+            };
+
+            function applyCellWidth(cell, width) {
+                cell.style.width = width;
+                cell.style.minWidth = width;
+                cell.style.maxWidth = width;
+            }
+
+            function getReadonlyActualCellMarkup(value) {
+                return `<span class="form-control actual-hour-label" style="width:100%; box-sizing:border-box; background-color:#e9ecef; pointer-events:none;">${value}</span>`;
+            }
+
             function getPlanUrl(template, projectId) { return template.replace('PROJECT_ID', String(projectId)); }
+            function getResourcePlanUrl(template, intervalId) { return template.replace('INTERVAL_ID', String(intervalId)); }
+            function parseLocalDate(value) {
+                if (typeof value !== 'string') {
+                    return null;
+                }
+
+                const parts = value.split('-').map((part) => parseInt(part, 10));
+                if (parts.length !== 3 || parts.some((part) => Number.isNaN(part))) {
+                    return null;
+                }
+
+                return new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0, 0);
+            }
             function getMonday(date) { const r = new Date(date); const d=r.getDay(); r.setDate(r.getDate() + (d===0?-6:1-d)); r.setHours(0,0,0,0); return r; }
             function getSunday(date) { const s = getMonday(date); s.setDate(s.getDate()+6); s.setHours(23,59,59,999); return s; }
-            function getIsoWeek(date) {
-                const t = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-                const dn = (t.getUTCDay()+6)%7; t.setUTCDate(t.getUTCDate()-dn+3);
-                const ft = new Date(Date.UTC(t.getUTCFullYear(),0,4)); const fdn=(ft.getUTCDay()+6)%7; ft.setUTCDate(ft.getUTCDate()-fdn+3);
-                return 1 + Math.round((t-ft)/604800000);
+            function formatDateKey(date) {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
             }
-            function getWeekLabel(weekStart) { return `W${getIsoWeek(weekStart)}-${String(weekStart.getFullYear()).slice(-2)}`; }
+            function formatShortDate(date) {
+                const day = String(date.getDate()).padStart(2, '0');
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                return `${day}.${month}`;
+            }
+            function getTwoWeekLabel(periodStart) {
+                const periodEnd = new Date(periodStart);
+                periodEnd.setDate(periodEnd.getDate() + 13);
+                return `${formatShortDate(periodStart)}\n${formatShortDate(periodEnd)}`;
+            }
+
+            function buildAlignedBiweeklyIntervals(startDate, endDate) {
+                if (!(startDate instanceof Date) || !(endDate instanceof Date)) {
+                    return [];
+                }
+
+                const rangeStart = getMonday(startDate);
+                rangeStart.setDate(rangeStart.getDate() - 14);
+                const rangeEnd = getSunday(endDate);
+                rangeEnd.setDate(rangeEnd.getDate() + 14);
+
+                const januaryFirst = new Date(startDate.getFullYear(), 0, 1, 12, 0, 0, 0);
+                const cursor = getMonday(januaryFirst);
+                const intervals = [];
+
+                while (cursor <= rangeEnd) {
+                    const intervalStart = new Date(cursor);
+                    const intervalEnd = new Date(cursor);
+                    intervalEnd.setDate(intervalEnd.getDate() + 13);
+                    intervalEnd.setHours(23, 59, 59, 999);
+
+                    if (intervalEnd >= rangeStart) {
+                        intervals.push({
+                            start: formatDateKey(intervalStart),
+                            resourcePlanId: intervalStart.toISOString().slice(0, 10),
+                            label: getTwoWeekLabel(intervalStart),
+                        });
+                    }
+
+                    cursor.setDate(cursor.getDate() + 14);
+                }
+
+                return intervals;
+            }
 
             function buildWeeks() {
                 if (!state.activeProject || !state.activeProject.start || !state.activeProject.end) return [];
-                const startDate = new Date(state.activeProject.start); const endDate = new Date(state.activeProject.end);
+                const startDate = parseLocalDate(state.activeProject.start); const endDate = parseLocalDate(state.activeProject.end);
+                if (!(startDate instanceof Date) || !(endDate instanceof Date)) return [];
                 if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || startDate > endDate) return [];
-                const periodStart = getMonday(startDate); periodStart.setDate(periodStart.getDate() - 7);
-                const periodEnd = getSunday(endDate); periodEnd.setDate(periodEnd.getDate() + 14);
-                const weeks = []; const cursor = new Date(periodStart);
-                while (cursor <= periodEnd) { const ws = new Date(cursor); weeks.push({label:getWeekLabel(ws), start: ws.toISOString().slice(0,10)}); cursor.setDate(cursor.getDate()+7); }
-                return weeks;
+                const intervals = buildAlignedBiweeklyIntervals(startDate, endDate);
+                if (state.additionalPeriods <= 0 || intervals.length === 0) {
+                    return intervals;
+                }
+
+                const extended = [...intervals];
+                let lastStart = parseLocalDate(intervals[intervals.length - 1].start);
+                if (!(lastStart instanceof Date)) {
+                    return intervals;
+                }
+
+                for (let i = 0; i < state.additionalPeriods; i++) {
+                    lastStart = new Date(lastStart);
+                    lastStart.setDate(lastStart.getDate() + 14);
+                    extended.push({
+                        start: formatDateKey(lastStart),
+                        resourcePlanId: null,
+                        label: getTwoWeekLabel(lastStart),
+                    });
+                }
+
+                return extended;
+            }
+
+            function getCurrentBiweeklyIndex() {
+                if (state.weeks.length === 0) {
+                    return -1;
+                }
+
+                const now = new Date();
+                now.setHours(12, 0, 0, 0);
+
+                for (let i = 0; i < state.weeks.length; i++) {
+                    const start = parseLocalDate(state.weeks[i].start);
+                    if (!(start instanceof Date)) {
+                        continue;
+                    }
+                    start.setHours(0, 0, 0, 0);
+                    const end = new Date(start);
+                    end.setDate(end.getDate() + 13);
+                    end.setHours(23, 59, 59, 999);
+                    if (now >= start && now <= end) {
+                        return i;
+                    }
+                }
+
+                const firstStart = parseLocalDate(state.weeks[0].start);
+                if (!(firstStart instanceof Date)) {
+                    return -1;
+                }
+                firstStart.setHours(0, 0, 0, 0);
+                if (now < firstStart) {
+                    return 0;
+                }
+
+                return state.weeks.length;
+            }
+
+            function refreshActualSummaryFromRenderedTable() {
+                const totals = new Array(state.weeks.length).fill(0);
+                actualTableBody.querySelectorAll('tr').forEach((row) => {
+                    const rate = parseFloat(row.dataset.rate || '0') || 0;
+                    row.querySelectorAll('.actual-hour-cell').forEach((cell, idx) => {
+                        const input = cell.querySelector('.actual-hour-input');
+                        const hours = input ? (parseFloat(input.value || '0') || 0) : (parseFloat(cell.dataset.hours || '0') || 0);
+                        totals[idx] += hours * rate;
+                    });
+                });
+
+                actualSummaryRow.querySelectorAll('.actual-summary-cell').forEach((cell, idx) => {
+                    cell.textContent = String(Math.round(totals[idx]));
+                });
+                state.actualTotals = totals;
+            }
+
+            function getResourcePlanCostForInterval(interval, projectId) {
+                const resourcePlan = state.resourcePlansByInterval[String(interval?.resourcePlanId || '')];
+                if (!resourcePlan || !resourcePlan.intervalId || resourcePlan.status !== 'APPROVED') {
+                    return null;
+                }
+
+                return employees.reduce((sum, employee) => {
+                    const cellKey = `${resourcePlan.intervalId}::${projectId}::${employee.id}`;
+                    const hours = parseFloat(resourcePlan.cells[cellKey] || '0') || 0;
+                    const rate = Number(employee.hourlyRate || 0) || 0;
+
+                    return sum + (hours * rate);
+                }, 0);
+            }
+
+            function refreshResourcePlanSummary() {
+                const projectId = String(state.activeProject?.id ?? '');
+                const displayValues = state.weeks.map((interval) => {
+                    const cost = getResourcePlanCostForInterval(interval, projectId);
+                    return cost === null ? '' : String(Math.round(cost));
+                });
+                const totals = state.weeks.map((interval) => {
+                    const cost = getResourcePlanCostForInterval(interval, projectId);
+                    return cost === null ? 0 : Math.round(cost);
+                });
+
+                resourcePlanSummaryRow.querySelectorAll('.resource-plan-summary-cell').forEach((cell, idx) => {
+                    cell.textContent = displayValues[idx] ?? '';
+                });
+
+                state.resourcePlanTotals = totals;
             }
 
             function setStatus(status) {
@@ -170,7 +493,7 @@
                 planStatusLabel.style.color = STATUS[state.status].color;
                 const locked = STATUS[state.status].locked;
                 addRowButton.disabled = locked;
-                tableBody.querySelectorAll('.hour-input, .employee-select').forEach((el) => { el.disabled = locked; });
+                tableBody.querySelectorAll('.hour-input, .employee-select, .remove-row-button').forEach((el) => { el.disabled = locked; });
                 if (state.activeProject) {
                     const row = activeStatusTableBody.querySelector(`tr[data-project-id="${state.activeProject.id}"] td:last-child`);
                     if (row) { row.textContent = STATUS[state.status].label; row.style.color = STATUS[state.status].color; }
@@ -210,13 +533,16 @@
 
             function createRow(initialEmployeeId = null, hourValues = []) {
                 const tr = document.createElement('tr'); tr.dataset.rate = '0';
-                const employeeCell = document.createElement('td'); employeeCell.innerHTML = `<select class="form-select employee-select">${createEmployeeOptions()}</select>`;
-                const rateCell = document.createElement('td'); rateCell.innerHTML = '<span class="rate-label">0</span>';
-                tr.appendChild(employeeCell); tr.appendChild(rateCell);
+                const employeeCell = document.createElement('td'); employeeCell.innerHTML = `<select class="form-select employee-select">${createEmployeeOptions()}</select>`; applyCellWidth(employeeCell, COLUMN_WIDTH.employee);
+                const rateCell = document.createElement('td'); rateCell.innerHTML = '<span class="rate-label">0</span>'; applyCellWidth(rateCell, COLUMN_WIDTH.rate);
+                const actionsCell = document.createElement('td');
+                actionsCell.innerHTML = '<button type="button" class="btn btn-sm btn-danger remove-row-button" title="Удалить строку">✕</button>';
+                applyCellWidth(actionsCell, COLUMN_WIDTH.actions);
+                tr.appendChild(employeeCell); tr.appendChild(rateCell); tr.appendChild(actionsCell);
                 for (let i=0;i<state.weeks.length;i++) {
                     const hourCell = document.createElement('td');
-                    hourCell.style.minWidth = '9rem';
-                    hourCell.innerHTML = `<input type="number" min="0" step="0.1" class="form-control hour-input" style="min-width: 9rem;" value="${hourValues[i] ?? '0'}">`;
+                    applyCellWidth(hourCell, COLUMN_WIDTH.period);
+                    hourCell.innerHTML = `<input type="number" min="0" step="0.1" class="form-control hour-input" style="width:100%; box-sizing:border-box;" value="${hourValues[i] ?? '0'}">`;
                     tr.appendChild(hourCell);
                 }
                 tableBody.appendChild(tr);
@@ -233,32 +559,197 @@
                 }));
             }
 
+            function getCurrentWorkingRowsPayload() {
+                return Array.from(actualTableBody.querySelectorAll('tr')).map((row) => ({
+                    employeeId: row.querySelector('.working-employee-select')?.value ?? null,
+                    hours: Array.from(row.querySelectorAll('.actual-hour-cell')).map((cell) => {
+                        const input = cell.querySelector('.actual-hour-input');
+                        return String(input ? (parseFloat(input.value || '0') || 0) : (parseFloat(cell.dataset.hours || '0') || 0));
+                    }),
+                }));
+            }
+
+            function hasDuplicateWorkingPlanEmployees() {
+                const employeeIds = Array.from(actualTableBody.querySelectorAll('.working-employee-select'))
+                    .map((select) => String(select.value || ''))
+                    .filter((employeeId) => employeeId !== '');
+
+                return new Set(employeeIds).size !== employeeIds.length;
+            }
+
+            function assertWorkingPlanEmployeesUnique() {
+                if (!hasDuplicateWorkingPlanEmployees()) {
+                    return true;
+                }
+
+                document.getElementById('workingPlanDuplicateWarning')?.classList.remove('d-none');
+
+                return false;
+            }
+
+            function isCurrentResourcePlanApproved() {
+                const currentBiweeklyIndex = getCurrentBiweeklyIndex();
+                if (currentBiweeklyIndex < 0 || currentBiweeklyIndex >= state.weeks.length) {
+                    return false;
+                }
+
+                const intervalId = state.weeks[currentBiweeklyIndex]?.resourcePlanId ?? '';
+                return state.resourcePlansByInterval[String(intervalId)]?.status === 'APPROVED';
+            }
+
+            function isWorkingPlanCellEditable(intervalIndex) {
+                const currentBiweeklyIndex = getCurrentBiweeklyIndex();
+                if (currentBiweeklyIndex < 0) {
+                    return true;
+                }
+
+                if (currentBiweeklyIndex >= state.weeks.length) {
+                    return false;
+                }
+
+                if (intervalIndex < currentBiweeklyIndex) {
+                    return false;
+                }
+
+                if (intervalIndex === currentBiweeklyIndex && isCurrentResourcePlanApproved()) {
+                    return false;
+                }
+
+                return true;
+            }
+
+            function updateWorkingRowRate(row) {
+                const select = row.querySelector('.working-employee-select');
+                const rateLabel = row.querySelector('.working-rate-label');
+                const employee = employeeMap.get(String(select?.value || ''));
+                const rate = employee ? Number(employee.hourlyRate || 0) : 0;
+                if (rateLabel) {
+                    rateLabel.textContent = String(Math.round(rate));
+                }
+                row.dataset.rate = String(rate);
+            }
+
+            function createWorkingRow(initialEmployeeId = null, hourValues = [], locked = false) {
+                const tr = document.createElement('tr');
+                tr.dataset.rate = '0';
+                tr.dataset.locked = locked ? 'true' : 'false';
+
+                const employeeCell = document.createElement('td');
+                employeeCell.innerHTML = `<select class="form-select working-employee-select">${createEmployeeOptions()}</select>`;
+                applyCellWidth(employeeCell, COLUMN_WIDTH.employee);
+                tr.appendChild(employeeCell);
+
+                const rateCell = document.createElement('td');
+                rateCell.innerHTML = '<span class="working-rate-label">0</span>';
+                applyCellWidth(rateCell, COLUMN_WIDTH.rate);
+                tr.appendChild(rateCell);
+
+                const actionsCell = document.createElement('td');
+                actionsCell.innerHTML = '<button type="button" class="btn btn-sm btn-danger remove-working-row-button" title="Удалить строку">×</button>';
+                applyCellWidth(actionsCell, COLUMN_WIDTH.actions);
+                tr.appendChild(actionsCell);
+
+                for (let i = 0; i < state.weeks.length; i++) {
+                    const hourCell = document.createElement('td');
+                    hourCell.className = 'actual-hour-cell';
+                    applyCellWidth(hourCell, COLUMN_WIDTH.period);
+                    const value = parseFloat(hourValues[i] || '0') || 0;
+                    const editable = isWorkingPlanCellEditable(i);
+                    hourCell.dataset.hours = String(value);
+                    if (editable) {
+                        hourCell.innerHTML = `<input type="number" min="0" step="0.1" class="form-control actual-hour-input" style="width:100%; box-sizing:border-box;" data-biweekly-index="${i}" value="${value}">`;
+                    } else {
+                        hourCell.innerHTML = getReadonlyActualCellMarkup(value);
+                    }
+                    tr.appendChild(hourCell);
+                }
+
+                actualTableBody.appendChild(tr);
+                const select = tr.querySelector('.working-employee-select');
+                if (initialEmployeeId !== null && select) {
+                    select.value = String(initialEmployeeId);
+                }
+                if (select && !select.value && employees.length > 0) {
+                    select.value = String(employees[0].id);
+                }
+                updateWorkingRowRate(tr);
+                const removeButton = tr.querySelector('.remove-working-row-button');
+                if (removeButton) {
+                    removeButton.disabled = locked;
+                }
+            }
+
+            function renderWorkingPlanTable(rows = []) {
+                actualTableBody.innerHTML = '';
+                state.workingPlanRows = Array.isArray(rows) ? rows.map((row) => ({
+                    employeeId: row.employeeId ?? null,
+                    hours: Array.isArray(row.hours) ? row.hours : [],
+                    locked: row.locked === true,
+                })) : [];
+
+                state.workingPlanRows.forEach((row) => createWorkingRow(row.employeeId ?? null, row.hours ?? [], row.locked === true));
+
+                if (state.workingPlanRows.length === 0) {
+                    createWorkingRow();
+                }
+
+                actualTableHead.querySelectorAll('th').forEach((cell, idx) => {
+                    const biweeklyIndex = idx - 3;
+                    cell.style.backgroundColor = biweeklyIndex === getCurrentBiweeklyIndex() ? '#fff3cd' : '';
+                });
+
+                actualSummaryRow.querySelectorAll('.actual-summary-cell').forEach((cell, idx) => {
+                    cell.style.backgroundColor = idx === getCurrentBiweeklyIndex() ? '#fff3cd' : '';
+                });
+
+                resourcePlanSummaryRow.querySelectorAll('.resource-plan-summary-cell').forEach((cell, idx) => {
+                    cell.style.backgroundColor = idx === getCurrentBiweeklyIndex() ? '#fff3cd' : '';
+                });
+
+                refreshActualSummaryFromRenderedTable();
+                refreshResourcePlanSummary();
+            }
+
             function renderHeaders() {
                 tableHead.innerHTML = ''; summaryRow.querySelectorAll('td').forEach((c) => c.remove());
-                actualTableHead.innerHTML = ''; actualSummaryRow.querySelectorAll('td').forEach((c) => c.remove());
-                const hr = document.createElement('tr'); hr.innerHTML = '<th>ФИО сотрудника</th><th>Часовая ставка</th>';
+                actualTableHead.innerHTML = '';
+                actualSummaryRow.querySelectorAll('td').forEach((c) => c.remove());
+                resourcePlanSummaryRow.querySelectorAll('td').forEach((c) => c.remove());
+                const hr = document.createElement('tr'); hr.innerHTML = '<th>ФИО сотрудника</th><th>Часовая ставка</th><th>Действия</th>';
+                applyCellWidth(hr.children[0], COLUMN_WIDTH.employee);
+                applyCellWidth(hr.children[1], COLUMN_WIDTH.rate);
+                applyCellWidth(hr.children[2], COLUMN_WIDTH.actions);
                 const hr2 = document.createElement('tr'); hr2.innerHTML = '<th>ФИО сотрудника</th><th>Часовая ставка</th>';
+                applyCellWidth(hr2.children[0], COLUMN_WIDTH.employee);
+                applyCellWidth(hr2.children[1], COLUMN_WIDTH.rate);
+                const actualActionsHeader = document.createElement('th');
+                actualActionsHeader.textContent = 'Действия';
+                applyCellWidth(actualActionsHeader, COLUMN_WIDTH.actions);
+                hr2.appendChild(actualActionsHeader);
                 state.weeks.forEach((week) => {
-                    const th = document.createElement('th'); th.textContent = week.label; th.style.minWidth = '9rem'; hr.appendChild(th);
-                    const s = document.createElement('td'); s.className = 'summary-cell'; s.style.minWidth = '9rem'; s.textContent = '0'; summaryRow.appendChild(s);
-                    const th2 = document.createElement('th'); th2.textContent = week.label; th2.style.minWidth = '9rem'; hr2.appendChild(th2);
-                    const s2 = document.createElement('td'); s2.className = 'actual-summary-cell'; s2.style.minWidth = '9rem'; s2.textContent = '0'; actualSummaryRow.appendChild(s2);
+                    const th = document.createElement('th'); th.textContent = week.label; th.style.whiteSpace = 'pre-line'; applyCellWidth(th, COLUMN_WIDTH.period); hr.appendChild(th);
+                    const s = document.createElement('td'); s.className = 'summary-cell'; applyCellWidth(s, COLUMN_WIDTH.period); s.textContent = '0'; summaryRow.appendChild(s);
+                    const th2 = document.createElement('th'); th2.textContent = week.label; th2.style.whiteSpace = 'pre-line'; applyCellWidth(th2, COLUMN_WIDTH.period); hr2.appendChild(th2);
+                    const s2 = document.createElement('td'); s2.className = 'actual-summary-cell'; applyCellWidth(s2, COLUMN_WIDTH.period); s2.textContent = '0'; actualSummaryRow.appendChild(s2);
+                    const s3 = document.createElement('td'); s3.className = 'resource-plan-summary-cell'; applyCellWidth(s3, COLUMN_WIDTH.period); s3.textContent = '0'; resourcePlanSummaryRow.appendChild(s3);
                 });
                 tableHead.appendChild(hr); actualTableHead.appendChild(hr2);
             }
 
             function renderTableStructure(rowsFromStorage = null) {
                 state.weeks = buildWeeks();
-                renderHeaders(); tableBody.innerHTML = ''; actualTableBody.innerHTML='';
+                renderHeaders(); tableBody.innerHTML = '';
                 const rows = Array.isArray(rowsFromStorage) ? rowsFromStorage : [];
                 if (rows.length === 0) {
-                    for (let i=0;i<3;i++) createRow(employees[i] ? employees[i].id : null);
+                    const assignedEmployeeIds = Array.isArray(state.activeProject?.assignedEmployeeIds) && state.activeProject.assignedEmployeeIds.length > 0
+                        ? state.activeProject.assignedEmployeeIds
+                        : employees.slice(0, 3).map((employee) => employee.id);
+                    assignedEmployeeIds.forEach((employeeId) => createRow(employeeId));
                 } else {
                     rows.forEach((row) => createRow(row.employeeId ?? null, Array.isArray(row.hours) ? row.hours : []));
                 }
                 setStatus(state.status);
                 calculateSummary();
-                syncActualTable();
             }
 
             function calculateSummary() {
@@ -271,59 +762,38 @@
                 return totals;
             }
 
+            function rerenderPlansWithCurrentPeriods() {
+                const budgetRows = getCurrentRowsPayload().map((row) => ({
+                    employeeId: row.employeeId,
+                    hours: Array.isArray(row.hours) ? row.hours.slice(0, state.weeks.length) : [],
+                }));
+                const workingRows = Array.from(actualTableBody.querySelectorAll('tr')).map((row) => ({
+                    employeeId: row.querySelector('.working-employee-select')?.value ?? null,
+                    hours: Array.from(row.querySelectorAll('.actual-hour-cell')).map((cell) => {
+                        const input = cell.querySelector('.actual-hour-input');
+                        return String(input ? (parseFloat(input.value || '0') || 0) : (parseFloat(cell.dataset.hours || '0') || 0));
+                    }).slice(0, state.weeks.length),
+                    locked: row.dataset.locked === 'true',
+                }));
+
+                renderTableStructure(budgetRows);
+                renderWorkingPlanTable(workingRows);
+                renderChart();
+            }
+
             function syncActualTable() {
-                actualTableBody.innerHTML = '';
-                const totals = new Array(state.weeks.length).fill(0);
-                const plannedRows = Array.from(tableBody.querySelectorAll('tr')).map((row) => {
-                    const employeeId = String(row.querySelector('.employee-select')?.value || '');
-                    const plannedHours = Array.from(row.querySelectorAll('.hour-input')).map((input) => Math.round(parseFloat(input.value || '0') || 0));
-                    return { employeeId, plannedHours };
-                });
-
-                const included = new Set(plannedRows.map((row) => row.employeeId));
-                const extraRows = Object.keys(state.actualMatrix || {})
-                    .filter((employeeId) => !included.has(String(employeeId)))
-                    .map((employeeId) => ({ employeeId: String(employeeId), plannedHours: new Array(state.weeks.length).fill(0) }));
-
-                const rowsForActual = [...plannedRows, ...extraRows];
-
-                rowsForActual.forEach((rowData) => {
-                    const employee = getEmployeeMeta(rowData.employeeId);
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `<td>${employee.name}</td><td>${employee.rate}</td>`;
-
-                    for (let i = 0; i < state.weeks.length; i++) {
-                        const v = Number(state.actualMatrix[rowData.employeeId]?.[i] || 0);
-                        const hours = Math.round(v);
-                        totals[i] += hours * employee.rate;
-
-                        const plannedHours = rowData.plannedHours[i] || 0;
-                        const td = document.createElement('td');
-                        td.style.minWidth = '9rem';
-                        td.textContent = String(hours);
-
-                        if (hours > plannedHours) {
-                            td.style.color = '#dc3545';
-                            td.style.fontWeight = '700';
-                        }
-
-                        tr.appendChild(td);
-                    }
-
-                    actualTableBody.appendChild(tr);
-                });
-
-                actualSummaryRow.querySelectorAll('.actual-summary-cell').forEach((cell, idx) => {
-                    cell.textContent = String(Math.round(totals[idx]));
-                });
-                state.actualTotals = totals;
-                return totals;
+                renderWorkingPlanTable(getCurrentWorkingRowsPayload());
+                return state.actualTotals;
             }
 
             function renderChart() {
                 const budget = state.activeBudget || 0;
                 const plannedTotals = calculateSummary();
                 const actualTotals = state.actualTotals.length === state.weeks.length ? state.actualTotals : syncActualTable();
+                if (state.resourcePlanTotals.length !== state.weeks.length) {
+                    refreshResourcePlanSummary();
+                }
+                const resourcePlanTotals = state.resourcePlanTotals.length === state.weeks.length ? state.resourcePlanTotals : new Array(state.weeks.length).fill(0);
 
                 if (plannedTotals.some((v) => v > budget)) {
                     alert('Внимание! Экономика проекта отрицательная');
@@ -337,8 +807,24 @@
                     return values;
                 };
 
+                const buildResourcePlanChartSeries = (blackValues, totals, currentBiweeklyIndex) => {
+                    const values = [budget];
+                    for (let i = 0; i < totals.length; i++) {
+                        if (currentBiweeklyIndex >= 0 && i >= currentBiweeklyIndex) {
+                            values.push(null);
+                            continue;
+                        }
+
+                        values.push((blackValues[i] ?? budget) - (totals[i] ?? 0));
+                    }
+
+                    return values;
+                };
+
                 const plannedValues = buildSeries(plannedTotals);
                 const actualValues = buildSeries(actualTotals);
+                const currentBiweeklyIndex = getCurrentBiweeklyIndex();
+                const resourcePlanValues = buildResourcePlanChartSeries(actualValues, resourcePlanTotals, currentBiweeklyIndex);
 
                 if (state.weeks.length === 0) {
                     chartSvg.innerHTML = '<text x="20" y="40">У выбранного проекта нет корректных дат.</text>';
@@ -351,7 +837,8 @@
                 const iw = w - p.left - p.right;
                 const ih = h - p.top - p.bottom;
 
-                const allValues = [...plannedValues, ...actualValues, 0, budget];
+                const definedResourcePlanValues = resourcePlanValues.filter((value) => value !== null);
+                const allValues = [...plannedValues, ...actualValues, ...definedResourcePlanValues, 0, budget];
                 let min = Math.min(...allValues);
                 let max = Math.max(...allValues);
                 const pad = Math.max((max - min) * 0.1, 1);
@@ -359,14 +846,25 @@
                 max += pad;
                 const range = max - min || 1;
 
-                const toPoints = (values) => values.map((value, index) => ({
-                    x: p.left + (index * iw) / Math.max(values.length - 1, 1),
-                    y: p.top + ((max - value) / range) * ih,
-                    value,
-                }));
+                const toPoints = (values) => values.map((value, index) => {
+                    if (value === null) {
+                        return {
+                            x: p.left + (index * iw) / Math.max(values.length - 1, 1),
+                            y: null,
+                            value: null,
+                        };
+                    }
+
+                    return {
+                        x: p.left + (index * iw) / Math.max(values.length - 1, 1),
+                        y: p.top + ((max - value) / range) * ih,
+                        value,
+                    };
+                });
 
                 const plannedPts = toPoints(plannedValues);
                 const actualPts = toPoints(actualValues);
+                const resourcePlanPts = toPoints(resourcePlanValues);
                 const y0 = p.top + ((max - 0) / range) * ih;
 
                 const buildPlannedSegments = (pts) => {
@@ -388,11 +886,34 @@
                     return seg;
                 };
 
-                const buildPolyline = (pts, color) => `<polyline fill="none" stroke="${color}" stroke-width="2" points="${pts.map((pt) => `${pt.x},${pt.y}`).join(' ')}" />`;
+                const buildPolyline = (pts, color) => {
+                    const segments = [];
+                    let currentSegment = [];
 
-                const xLabels = state.weeks.map((week) => week.label);
-                const lastWeekLabel = xLabels.length > 0 ? `${xLabels[xLabels.length - 1]}+1` : 'W+1';
-                xLabels.push(lastWeekLabel);
+                    pts.forEach((pt) => {
+                        if (pt.value === null || pt.y === null) {
+                            if (currentSegment.length > 1) {
+                                segments.push(currentSegment);
+                            }
+                            currentSegment = [];
+                            return;
+                        }
+
+                        currentSegment.push(pt);
+                    });
+
+                    if (currentSegment.length > 1) {
+                        segments.push(currentSegment);
+                    }
+
+                    return segments.map((segment) => `<polyline fill="none" stroke="${color}" stroke-width="2" points="${segment.map((pt) => `${pt.x},${pt.y}`).join(' ')}" />`).join('');
+                };
+
+                const xLabels = ['', ...state.weeks.map((week) => week.label)];
+                const buildAxisLabel = (pt, label) => {
+                    const lines = String(label || '').split('\n');
+                    return `<text x="${pt.x}" y="${h - p.bottom + 18}" text-anchor="middle" font-size="11">${lines.map((line, index) => `<tspan x="${pt.x}" dy="${index === 0 ? 0 : 12}">${line}</tspan>`).join('')}</text>`;
+                };
 
                 chartSvg.setAttribute('viewBox', `0 0 ${w} ${h}`);
                 chartSvg.innerHTML = `
@@ -400,12 +921,15 @@
                     <line x1="${p.left}" y1="${h - p.bottom}" x2="${w - p.right}" y2="${h - p.bottom}" stroke="#333" />
                     <line x1="${p.left}" y1="${y0}" x2="${w - p.right}" y2="${y0}" stroke="#666" stroke-dasharray="4 3" />
                     ${buildPolyline(actualPts, '#000000')}
+                    ${buildPolyline(resourcePlanPts, '#2fb344')}
                     ${buildPlannedSegments(plannedPts)}
                     ${actualPts.map((pt) => `<circle cx="${pt.x}" cy="${pt.y}" r="3" fill="#000000" />`).join('')}
+                    ${resourcePlanPts.filter((pt) => pt.value !== null && pt.y !== null).map((pt) => `<circle cx="${pt.x}" cy="${pt.y}" r="3" fill="#2fb344" />`).join('')}
                     ${plannedPts.map((pt) => `<circle cx="${pt.x}" cy="${pt.y}" r="3" fill="${pt.value < 0 ? '#dc3545' : '#206bc4'}" />`).join('')}
-                    ${plannedPts.map((pt, idx) => `<text x="${pt.x}" y="${h - p.bottom + 20}" text-anchor="middle" font-size="11">${xLabels[idx] || ''}</text>`).join('')}
-                    ${plannedPts.map((pt) => `<text x="${pt.x}" y="${pt.y - 10}" text-anchor="middle" font-size="10" fill="#206bc4">${Math.round(pt.value)}</text>`).join('')}
-                    ${actualPts.map((pt) => `<text x="${pt.x}" y="${pt.y + 14}" text-anchor="middle" font-size="10" fill="#000000">${Math.round(pt.value)}</text>`).join('')}
+                    ${plannedPts.map((pt, idx) => buildAxisLabel(pt, xLabels[idx] || '')).join('')}
+                    ${plannedPts.map((pt) => `<text x="${pt.x}" y="${pt.y - 12}" text-anchor="middle" font-size="10" fill="#206bc4">${Math.round(pt.value)}</text>`).join('')}
+                    ${actualPts.map((pt) => `<text x="${pt.x}" y="${pt.y + 22}" text-anchor="middle" font-size="10" fill="#000000">${Math.round(pt.value)}</text>`).join('')}
+                    ${resourcePlanPts.filter((pt) => pt.value !== null && pt.y !== null).map((pt) => `<text x="${pt.x}" y="${pt.y - 32}" text-anchor="middle" font-size="10" fill="#2fb344">${Math.round(pt.value)}</text>`).join('')}
                 `;
             }
 
@@ -418,9 +942,187 @@
 
             async function loadActualCosts(projectId) {
                 const r = await fetch(getPlanUrl(actualCostsUrlTemplate, projectId));
-                if (!r.ok) return {};
+                if (!r.ok) return {weeks: [], matrix: {}};
                 const payload = await r.json();
-                return payload.matrix && typeof payload.matrix === 'object' ? payload.matrix : {};
+                return {
+                    weeks: Array.isArray(payload.weeks) ? payload.weeks : [],
+                    matrix: payload.matrix && typeof payload.matrix === 'object' ? payload.matrix : {},
+                };
+            }
+
+            async function loadResourcePlan(intervalId) {
+                if (!intervalId) {
+                    return {intervalId: null, status: 'NEW', cells: {}};
+                }
+
+                const r = await fetch(getResourcePlanUrl(resourcePlanGetUrlTemplate, intervalId));
+                if (!r.ok) {
+                    return {intervalId, status: 'NEW', cells: {}};
+                }
+
+                const payload = await r.json();
+                return {
+                    intervalId,
+                    status: ['DISCUSSION', 'APPROVED', 'CORRECTING'].includes(payload.status) ? payload.status : 'NEW',
+                    cells: payload.cells && typeof payload.cells === 'object' ? payload.cells : {},
+                };
+            }
+
+            async function loadResourcePlans(intervals) {
+                const intervalIds = Array.from(new Set((intervals || [])
+                    .map((interval) => String(interval?.resourcePlanId || ''))
+                    .filter((intervalId) => intervalId !== '')));
+
+                if (intervalIds.length === 0) {
+                    return {};
+                }
+
+                const query = intervalIds.map((intervalId) => `intervals[]=${encodeURIComponent(intervalId)}`).join('&');
+                const response = await fetch(`${resourcePlanBulkUrl}?${query}`);
+
+                if (!response.ok) {
+                    const fallbackEntries = await Promise.all(intervalIds.map(async (intervalId) => {
+                        const resourcePlan = await loadResourcePlan(intervalId);
+                        return [intervalId, resourcePlan];
+                    }));
+
+                    return Object.fromEntries(fallbackEntries);
+                }
+
+                const payload = await response.json();
+                const plans = payload.plans && typeof payload.plans === 'object' ? payload.plans : {};
+                const entries = intervalIds.map((intervalId) => {
+                    const plan = plans[intervalId] && typeof plans[intervalId] === 'object' ? plans[intervalId] : {};
+
+                    return [intervalId, {
+                        intervalId,
+                        status: ['DISCUSSION', 'APPROVED', 'CORRECTING'].includes(plan.status) ? plan.status : 'NEW',
+                        cells: plan.cells && typeof plan.cells === 'object' ? plan.cells : {},
+                    }];
+                });
+
+                return Object.fromEntries(entries);
+            }
+
+            async function loadWorkingPlan(projectId) {
+                const response = await fetch(getPlanUrl(workingPlanGetUrlTemplate, projectId));
+                if (!response.ok) {
+                    return {rows: [], savedRows: null, hasSaved: false};
+                }
+
+                const payload = await response.json();
+                return {
+                    rows: Array.isArray(payload.rows) ? payload.rows : [],
+                    savedRows: Array.isArray(payload.savedRows) ? payload.savedRows : null,
+                    hasSaved: payload.hasSaved === true,
+                };
+            }
+
+            async function persistWorkingPlan() {
+                if (!state.activeProject) {
+                    return;
+                }
+
+                const rows = getCurrentWorkingRowsPayload();
+                const response = await fetch(getPlanUrl(workingPlanSaveUrlTemplate, state.activeProject.id), {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({rows}),
+                });
+
+                if (!response.ok) {
+                    alert('Не удалось сохранить текущий план');
+                    return;
+                }
+
+                const payload = await response.json();
+                state.savedWorkingPlanRows = Array.isArray(payload.rows) ? payload.rows : rows;
+                state.hasSavedWorkingPlan = true;
+                alert('Успешно сохранено');
+                state.workingPlanRows = state.savedWorkingPlanRows;
+            }
+
+            async function saveCurrentResourcePlanIntervalFromActualTable() {
+                const currentBiweeklyIndex = getCurrentBiweeklyIndex();
+                const intervalId = state.weeks[currentBiweeklyIndex]?.resourcePlanId ?? null;
+
+                if (!state.activeProject || !intervalId || !['NEW', 'CORRECTING'].includes(state.currentResourcePlan.status)) {
+                    return;
+                }
+
+                const cells = {...state.currentResourcePlan.cells};
+                const projectId = String(state.activeProject.id);
+                const projectOrderKey = `${intervalId}::__projects__`;
+                const projectSnapshotsKey = `${intervalId}::__project_snapshots__`;
+                let projectIds = [];
+                let projectSnapshots = [];
+
+                try {
+                    projectIds = JSON.parse(String(cells[projectOrderKey] || '[]'));
+                } catch (_error) {
+                    projectIds = [];
+                }
+
+                try {
+                    projectSnapshots = JSON.parse(String(cells[projectSnapshotsKey] || '[]'));
+                } catch (_error) {
+                    projectSnapshots = [];
+                }
+
+                if (!projectIds.map((item) => String(item)).includes(projectId)) {
+                    projectIds.push(state.activeProject.id);
+                }
+
+                if (!projectSnapshots.some((project) => String(project.id) === projectId)) {
+                    projectSnapshots.push({
+                        id: state.activeProject.id,
+                        name: state.activeProject.name,
+                    });
+                }
+
+                cells[projectOrderKey] = JSON.stringify(projectIds);
+                cells[projectSnapshotsKey] = JSON.stringify(projectSnapshots);
+
+                actualTableBody.querySelectorAll('tr').forEach((row) => {
+                    const employeeId = String(row.querySelector('.working-employee-select')?.value || '');
+                    if (!employeeId) {
+                        return;
+                    }
+
+                    const cellsByPeriod = row.querySelectorAll('.actual-hour-cell');
+                    const targetCell = cellsByPeriod[currentBiweeklyIndex];
+                    if (!targetCell) {
+                        return;
+                    }
+
+                    const input = targetCell.querySelector('.actual-hour-input');
+                    const hours = input ? (parseFloat(input.value || '0') || 0) : (parseFloat(targetCell.dataset.hours || '0') || 0);
+                    cells[`${intervalId}::${projectId}::${employeeId}`] = String(hours);
+                });
+
+                const response = await fetch(getResourcePlanUrl(resourcePlanStatusUrlTemplate, intervalId), {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        status: state.currentResourcePlan.status,
+                        cells,
+                    }),
+                });
+
+                if (!response.ok) {
+                    alert('Не удалось сохранить ресурсный план из нижней таблицы');
+                    return;
+                }
+
+                const payload = await response.json();
+                state.currentResourcePlan = {
+                    intervalId,
+                    status: ['DISCUSSION', 'APPROVED', 'CORRECTING'].includes(payload.status) ? payload.status : 'NEW',
+                    cells: payload.cells && typeof payload.cells === 'object' ? payload.cells : cells,
+                };
+                state.resourcePlansByInterval[String(intervalId)] = state.currentResourcePlan;
+                refreshResourcePlanSummary();
+                alert('Успешно отправлено');
             }
 
             async function savePlan(status) {
@@ -435,24 +1137,162 @@
                 const start = state.activeProject?.start ?? '—'; const end = state.activeProject?.end ?? '—';
                 state.activeBudget = Number(state.activeProject?.budget ?? 0);
                 projectStartDateLabel.textContent = start; projectEndDateLabel.textContent = end; projectBudgetLabel.textContent = String(Math.round(state.activeBudget));
-                if (!state.activeProject) { state.status='NEW'; state.actualMatrix={}; renderTableStructure([]); renderChart(); return; }
-                const [saved, actual] = await Promise.all([loadSavedPlan(state.activeProject.id), loadActualCosts(state.activeProject.id)]);
-                state.status = saved.status; state.actualMatrix = actual;
-                renderTableStructure(saved.rows); renderChart();
+                if (!state.activeProject) { state.status='NEW'; state.actualWeeks=[]; state.actualMatrix={}; state.actualOverrides={}; state.resourcePlanTotals=[]; state.resourcePlansByInterval = {}; state.currentResourcePlan = {intervalId: null, status: 'NEW', cells: {}}; state.workingPlanRows = []; state.savedWorkingPlanRows = null; state.hasSavedWorkingPlan = false; renderTableStructure([]); renderWorkingPlanTable([]); renderChart(); return; }
+                state.additionalPeriods = 0;
+                const alignedWeeks = buildWeeks();
+                const currentBiweeklyIndex = (() => {
+                    if (alignedWeeks.length === 0) { return -1; }
+                    const now = new Date();
+                    now.setHours(12, 0, 0, 0);
+                    for (let i = 0; i < alignedWeeks.length; i++) {
+                        const start = parseLocalDate(alignedWeeks[i].start);
+                        if (!(start instanceof Date)) { continue; }
+                        start.setHours(0, 0, 0, 0);
+                        const end = new Date(start);
+                        end.setDate(end.getDate() + 13);
+                        end.setHours(23, 59, 59, 999);
+                        if (now >= start && now <= end) { return i; }
+                    }
+                    return -1;
+                })();
+                const currentResourcePlanIntervalId = currentBiweeklyIndex >= 0 ? alignedWeeks[currentBiweeklyIndex]?.resourcePlanId ?? null : null;
+                const [saved, resourcePlans, workingPlan] = await Promise.all([loadSavedPlan(state.activeProject.id), loadResourcePlans(alignedWeeks), loadWorkingPlan(state.activeProject.id)]);
+                state.additionalPeriods = Math.max(
+                    0,
+                    getRowsMaxLength(saved.rows) - alignedWeeks.length,
+                    getRowsMaxLength(workingPlan.rows) - alignedWeeks.length,
+                    getRowsMaxLength(workingPlan.savedRows || []) - alignedWeeks.length
+                );
+                state.weeks = buildWeeks();
+                state.status = saved.status; state.actualWeeks = []; state.actualMatrix = {}; state.actualOverrides = {}; state.resourcePlansByInterval = resourcePlans; state.currentResourcePlan = resourcePlans[String(currentResourcePlanIntervalId)] || {intervalId: currentResourcePlanIntervalId, status: 'NEW', cells: {}}; state.savedWorkingPlanRows = workingPlan.savedRows; state.hasSavedWorkingPlan = workingPlan.hasSaved;
+                renderTableStructure(saved.rows); renderWorkingPlanTable(workingPlan.rows); renderChart();
             }
 
-            document.getElementById('addRowButton').addEventListener('click', function () { createRow(); setStatus(state.status); calculateSummary(); syncActualTable(); });
-            document.getElementById('buildChartButton').addEventListener('click', function () { renderChart(); });
+            document.getElementById('addRowButton').addEventListener('click', function () { createRow(); setStatus(state.status); calculateSummary(); });
+            addWorkingRowButton.addEventListener('click', function () { createWorkingRow(); refreshActualSummaryFromRenderedTable(); renderChart(); });
+            saveWorkingPlanButton.addEventListener('click', async function () {
+                if (!assertWorkingPlanEmployeesUnique()) {
+                    return;
+                }
+
+                renderChart();
+                await persistWorkingPlan();
+            });
+            sendToResourcePlanButton.addEventListener('click', async function () {
+                if (!assertWorkingPlanEmployeesUnique()) {
+                    return;
+                }
+
+                await saveCurrentResourcePlanIntervalFromActualTable();
+            });
+            rebuildWorkingPlanChartButton.addEventListener('click', function () {
+                renderChart();
+            });
+            loadSavedWorkingPlanButton.addEventListener('click', async function () {
+                if (!state.activeProject) {
+                    return;
+                }
+
+                const workingPlan = await loadWorkingPlan(state.activeProject.id);
+                state.savedWorkingPlanRows = workingPlan.savedRows;
+                state.hasSavedWorkingPlan = workingPlan.hasSaved;
+
+                if (Array.isArray(workingPlan.savedRows)) {
+                    state.additionalPeriods = Math.max(0, getRowsMaxLength(workingPlan.savedRows) - buildAlignedBiweeklyIntervals(parseLocalDate(state.activeProject.start), parseLocalDate(state.activeProject.end)).length);
+                    state.weeks = buildWeeks();
+                    renderTableStructure(getCurrentRowsPayload());
+                    renderWorkingPlanTable(workingPlan.savedRows);
+                    renderChart();
+                    alert('Последний сохраненный Текущий план выгружен успешно');
+                    return;
+                }
+
+                alert('Сохраненный текущий план не найден');
+            });
             document.getElementById('sendForApprovalButton').addEventListener('click', function () { if (state.activeProject) savePlan('SENT'); });
             document.getElementById('approvePlanButton').addEventListener('click', function () { if (isAdmin && state.activeProject) savePlan('APPROVED'); });
             document.getElementById('rejectPlanButton').addEventListener('click', function () { if (isAdmin && state.activeProject) savePlan('REJECTED'); });
             projectSelect.addEventListener('change', function () { applyProject(this.value); });
-            tableBody.addEventListener('change', function (event) { if (event.target.classList.contains('employee-select')) { updateRowRate(event.target.closest('tr')); calculateSummary(); syncActualTable(); } });
-            tableBody.addEventListener('input', function (event) { if (event.target.classList.contains('hour-input')) calculateSummary(); });
+            tableBody.addEventListener('change', function (event) {
+                if (event.target.classList.contains('employee-select')) {
+                    updateRowRate(event.target.closest('tr'));
+                    calculateSummary();
+                    return;
+                }
+
+                if (event.target.classList.contains('hour-input')) {
+                    calculateSummary();
+                }
+            });
+            tableBody.addEventListener('input', function (event) {
+                if (!event.target.classList.contains('hour-input')) {
+                    return;
+                }
+
+                calculateSummary();
+            });
+            actualTableBody.addEventListener('input', function (event) {
+                if (!event.target.classList.contains('actual-hour-input')) {
+                    return;
+                }
+                const biweeklyIndex = parseInt(String(event.target.dataset.biweeklyIndex || '-1'), 10);
+                if (Number.isNaN(biweeklyIndex) || biweeklyIndex < 0) {
+                    return;
+                }
+                const parentCell = event.target.closest('.actual-hour-cell');
+                if (parentCell) {
+                    parentCell.dataset.hours = String(parseFloat(event.target.value || '0') || 0);
+                }
+                refreshActualSummaryFromRenderedTable();
+                renderChart();
+            });
+            actualTableBody.addEventListener('change', function (event) {
+                if (event.target.classList.contains('working-employee-select')) {
+                    updateWorkingRowRate(event.target.closest('tr'));
+                    refreshActualSummaryFromRenderedTable();
+                    renderChart();
+                }
+            });
+            actualTableBody.addEventListener('click', function (event) {
+                if (!event.target.classList.contains('remove-working-row-button')) {
+                    return;
+                }
+
+                const row = event.target.closest('tr');
+                if (row?.dataset.locked === 'true') {
+                    return;
+                }
+
+                event.target.closest('tr')?.remove();
+                refreshActualSummaryFromRenderedTable();
+                renderChart();
+            });
+            document.getElementById('addPeriodButton')?.addEventListener('click', function () {
+                state.additionalPeriods += 1;
+                state.weeks = buildWeeks();
+                rerenderPlansWithCurrentPeriods();
+            });
+            document.getElementById('removePeriodButton')?.addEventListener('click', function () {
+                if (state.additionalPeriods <= 0) {
+                    return;
+                }
+
+                state.additionalPeriods -= 1;
+                state.weeks = buildWeeks();
+                rerenderPlansWithCurrentPeriods();
+            });
+            tableBody.addEventListener('click', function (event) {
+                if (!event.target.classList.contains('remove-row-button')) {
+                    return;
+                }
+
+                event.target.closest('tr')?.remove();
+                calculateSummary();
+            });
 
             if (projectSelect.value) applyProject(projectSelect.value);
             else if (projects.length > 0) { projectSelect.value = String(projects[0].id); applyProject(projectSelect.value); }
-            else { renderTableStructure([]); renderChart(); }
+            else { renderTableStructure([]); renderWorkingPlanTable([]); renderChart(); }
         })();
     </script>
 {% endblock %}
